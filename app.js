@@ -1087,6 +1087,24 @@ async function svgToPngBase64(svgEl, scale = 2) {
   }
 }
 
+// Render a chart HTML string (from buildLineChart) into a hidden DOM node,
+// rasterize its <svg> to a PNG, and clean up. Lets us produce charts that are
+// generated directly from the data in a specific export tab without needing
+// the live on-page charts.
+async function renderChartHtmlToPng(html, scale = 2) {
+  const wrapper = document.createElement('div');
+  wrapper.style.cssText = 'position:absolute;left:-99999px;top:0;visibility:hidden;';
+  wrapper.innerHTML = html;
+  document.body.appendChild(wrapper);
+  try {
+    const svg = wrapper.querySelector('svg');
+    if (!svg) throw new Error('no svg produced by buildLineChart');
+    return await svgToPngBase64(svg, scale);
+  } finally {
+    wrapper.remove();
+  }
+}
+
 // Aggregate NY data into one row per month (for the NY state monthly tab).
 function nyMonthlyRows(nyByDate, startCompact, endCompact) {
   const months = {};
@@ -1207,6 +1225,9 @@ async function exportExcel() {
   }
 
   // ---- Tab 2: NY State Monthly ----
+  const startCompactForNy = isoToCompact(data.startDate);
+  const endCompactForNy = isoToCompact(data.endDate);
+  const nyMonthly = nyMonthlyRows(data.nyByDate, startCompactForNy, endCompactForNy);
   {
     const ws = wb.addWorksheet('NY State Monthly');
     ws.columns = [
@@ -1225,24 +1246,43 @@ async function exportExcel() {
       { header: 'LPN+RN HPRD',        key: 'lpnRn_hprd', width: 14, numFmt: NUM2 },
       { header: 'Total HPRD',         key: 'total_hprd', width: 13, numFmt: NUM2 },
     ];
-    const startCompact = isoToCompact(data.startDate);
-    const endCompact = isoToCompact(data.endDate);
-    const monthly = nyMonthlyRows(data.nyByDate, startCompact, endCompact);
-    for (const m of monthly) ws.addRow(m);
+    for (const m of nyMonthly) ws.addRow(m);
     styleHeader(ws, 1);
     ws.views = [{ state: 'frozen', ySplit: 1 }];
+
+    // Build a 5-series line chart from the rows above (this tab's own data)
+    // and embed it below the table so the chart clearly visualises the data
+    // in this sheet.
+    if (nyMonthly.length > 0) {
+      try {
+        const nyChartHtml = buildLineChart({
+          title: 'NY state HPRD by month',
+          months: nyMonthly.map(m => monthKeyLabel(m.month)),
+          series: [
+            { label: 'CNA',      color: '#1f5fae', width: 2, values: nyMonthly.map(m => m.cna_hprd)   },
+            { label: 'LPN',      color: '#177245', width: 2, values: nyMonthly.map(m => m.lpn_hprd)   },
+            { label: 'RN',       color: '#b35800', width: 2, values: nyMonthly.map(m => m.rn_hprd)    },
+            { label: 'LPN + RN', color: '#6b3ea3', width: 2, values: nyMonthly.map(m => m.lpnRn_hprd) },
+            { label: 'Total',    color: '#c23b43', width: 2.5, values: nyMonthly.map(m => m.total_hprd) },
+          ],
+          width: 720,
+          height: 300,
+        });
+        const png = await renderChartHtmlToPng(nyChartHtml, 2);
+        const imageId = wb.addImage({ base64: png.base64, extension: 'png' });
+        const imgRow = nyMonthly.length + 3;
+        ws.addImage(imageId, {
+          tl: { col: 0, row: imgRow },
+          ext: { width: 820, height: 340 },
+        });
+      } catch (e) {
+        ws.getCell(`A${nyMonthly.length + 3}`).value = `(chart unavailable: ${e.message || e})`;
+      }
+    }
   }
 
   // ---- Tabs 3-7: one per metric ----
   const perMonth = buildMonthlyBuckets(data);
-  const chartSvgs = [...document.querySelectorAll('#charts .chart-svg')];
-  const chartByKey = {
-    cna:   chartSvgs[0],
-    lpn:   chartSvgs[1],
-    rn:    chartSvgs[2],
-    lpnRn: chartSvgs[3],
-    total: chartSvgs[4],
-  };
 
   for (const def of METRIC_DEFS) {
     const ws = wb.addWorksheet(def.label.replace(' HPRD', ''));
@@ -1313,20 +1353,32 @@ async function exportExcel() {
       r += 1;
     }
 
-    // Embed the chart image below the table
-    const svg = chartByKey[def.key];
-    if (svg) {
-      try {
-        const png = await svgToPngBase64(svg, 2);
-        const imageId = wb.addImage({ base64: png.base64, extension: 'png' });
-        const imgRow = r + 2;
-        ws.addImage(imageId, {
-          tl: { col: 0, row: imgRow - 1 },
-          ext: { width: 720, height: 310 },
-        });
-      } catch (e) {
-        ws.getCell(`A${r + 2}`).value = `(chart image unavailable: ${e.message || e})`;
-      }
+    // Generate the chart fresh from this tab's monthly rows so it visualises
+    // exactly the numbers printed in the table above.
+    try {
+      const months = perMonth.map(m => m.label);
+      const series = [
+        { label: 'Facility', color: '#1f5fae', width: 2.5, values: perMonth.map(m => m[def.key].fac) },
+        { label: 'NY avg',   color: '#5a6675', width: 2,   dash: '5 4', values: perMonth.map(m => m[def.key].ny) },
+      ];
+      const chartHtml = buildLineChart({
+        title: def.label,
+        months,
+        series,
+        minValue: minVal,
+        minLabel: 'NYS min',
+        width: 720,
+        height: 300,
+      });
+      const png = await renderChartHtmlToPng(chartHtml, 2);
+      const imageId = wb.addImage({ base64: png.base64, extension: 'png' });
+      const imgRow = r + 2;
+      ws.addImage(imageId, {
+        tl: { col: 0, row: imgRow - 1 },
+        ext: { width: 820, height: 340 },
+      });
+    } catch (e) {
+      ws.getCell(`A${r + 2}`).value = `(chart image unavailable: ${e.message || e})`;
     }
 
     ws.views = [{ state: 'frozen', ySplit: headerRow }];
