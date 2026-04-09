@@ -62,6 +62,33 @@
       <p id="coverage" class="coverage"></p>
     </section>
 
+    <section class="card minimums">
+      <div class="minimums-header">
+        <div>
+          <div class="minimums-title">NYS Minimum Staffing Requirements</div>
+          <div class="muted">NY nursing-home staffing law (10 NYCRR 415.13). Edit if NYS updates these.</div>
+        </div>
+        <button type="button" id="min-reset" class="ghost">Reset defaults</button>
+      </div>
+      <div class="minimums-grid">
+        <label class="min-field">
+          <span class="label">CNA minimum HPRD</span>
+          <input type="number" id="min-cna" step="0.01" min="0" />
+          <span class="muted">Hours per resident day by CNAs (incl. Med Aide).</span>
+        </label>
+        <label class="min-field">
+          <span class="label">LPN + RN minimum HPRD</span>
+          <input type="number" id="min-lpnrn" step="0.01" min="0" />
+          <span class="muted">Hours per resident day by licensed nurses (LPN + RN).</span>
+        </label>
+        <label class="min-field">
+          <span class="label">Total minimum HPRD</span>
+          <input type="number" id="min-total" step="0.01" min="0" />
+          <span class="muted">Combined CNA + LPN + RN hours per resident day.</span>
+        </label>
+      </div>
+    </section>
+
     <section id="status" class="status" hidden></section>
 
     <section id="results" class="results" hidden>
@@ -85,6 +112,7 @@
           <div id="m-cna" class="big"></div>
           <div class="muted">CNA + Med Aide</div>
           <div class="bench"><span class="bench-label">NY avg</span> <span id="ny-cna"></span> <span id="d-cna" class="delta"></span></div>
+          <div class="bench"><span class="bench-label">NYS min</span> <span id="min-v-cna"></span> <span id="min-d-cna" class="delta"></span></div>
         </div>
         <div class="metric">
           <div class="label">LPN HPRD</div>
@@ -103,12 +131,14 @@
           <div id="m-lpnrn" class="big"></div>
           <div class="muted">Licensed nurse HPRD</div>
           <div class="bench"><span class="bench-label">NY avg</span> <span id="ny-lpnrn"></span> <span id="d-lpnrn" class="delta"></span></div>
+          <div class="bench"><span class="bench-label">NYS min</span> <span id="min-v-lpnrn"></span> <span id="min-d-lpnrn" class="delta"></span></div>
         </div>
         <div class="metric total">
           <div class="label">Total HPRD</div>
           <div id="m-total" class="big"></div>
           <div class="muted">CNA + LPN + RN</div>
           <div class="bench"><span class="bench-label">NY avg</span> <span id="ny-total"></span> <span id="d-total" class="delta"></span></div>
+          <div class="bench"><span class="bench-label">NYS min</span> <span id="min-v-total"></span> <span id="min-d-total" class="delta"></span></div>
         </div>
       </div>
 

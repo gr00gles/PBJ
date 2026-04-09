@@ -18,6 +18,29 @@ const DATASET_TITLE = 'Payroll Based Journal Daily Nurse Staffing';
 const CATALOG_CACHE_KEY = 'pbj.catalog.v1';
 const CATALOG_TTL_MS = 60 * 60 * 1000; // 1 hour
 
+// NYS minimum staffing requirements (10 NYCRR 415.13 — 2022 nursing home staffing law).
+// Editable in the UI and persisted in localStorage so the user can update if NYS changes them.
+const MIN_CACHE_KEY = 'pbj.nysMinimums.v1';
+const MIN_DEFAULTS = { cna: 2.2, lpnRn: 1.1, total: 3.5 };
+function loadMinimums() {
+  try {
+    const raw = localStorage.getItem(MIN_CACHE_KEY);
+    if (raw) {
+      const m = JSON.parse(raw);
+      return {
+        cna:   Number.isFinite(+m.cna)   ? +m.cna   : MIN_DEFAULTS.cna,
+        lpnRn: Number.isFinite(+m.lpnRn) ? +m.lpnRn : MIN_DEFAULTS.lpnRn,
+        total: Number.isFinite(+m.total) ? +m.total : MIN_DEFAULTS.total,
+      };
+    }
+  } catch {}
+  return { ...MIN_DEFAULTS };
+}
+function saveMinimums(m) {
+  try { localStorage.setItem(MIN_CACHE_KEY, JSON.stringify(m)); } catch {}
+}
+let nysMinimums = loadMinimums();
+
 // ---------- field schema ----------
 
 const STAFF_GROUPS = [
@@ -471,6 +494,7 @@ function renderReport(data) {
   $('#m-total').textContent = fmt2.format(s.hprd.total);
 
   renderBenchmark(data);
+  renderMinimumsLine(data);
   renderBreakdown(data);
   renderTable(data);
 
@@ -518,6 +542,36 @@ function renderBenchmark(data) {
     } else {
       dEl.textContent = '';
       dEl.className = 'delta';
+    }
+  }
+}
+
+function renderMinimumsLine(data) {
+  const s = data.summary;
+  const METRICS = [
+    ['cna',   'min-v-cna',   'min-d-cna',   nysMinimums.cna],
+    ['lpnRn', 'min-v-lpnrn', 'min-d-lpnrn', nysMinimums.lpnRn],
+    ['total', 'min-v-total', 'min-d-total', nysMinimums.total],
+  ];
+  for (const [k, vId, dId, minVal] of METRICS) {
+    const vEl = document.getElementById(vId);
+    const dEl = document.getElementById(dId);
+    if (!Number.isFinite(minVal) || minVal <= 0) {
+      vEl.textContent = '—';
+      dEl.textContent = '';
+      dEl.className = 'delta';
+      continue;
+    }
+    vEl.textContent = fmt2.format(minVal);
+    const facVal = s.hprd[k];
+    const diff = facVal - minVal;
+    const pct = minVal > 0 ? (diff / minVal) * 100 : 0;
+    if (facVal >= minVal) {
+      dEl.textContent = `✓ +${Math.abs(pct).toFixed(1)}%`;
+      dEl.className = 'delta good';
+    } else {
+      dEl.textContent = `✗ −${Math.abs(pct).toFixed(1)}%`;
+      dEl.className = 'delta bad';
     }
   }
 }
@@ -676,6 +730,38 @@ function renderTable(data) {
 splitToggle.addEventListener('change', () => {
   if (currentReport) renderTable(currentReport);
 });
+
+// ---------- NYS minimum inputs ----------
+
+function initMinimumInputs() {
+  const cfg = [
+    ['min-cna',   'cna'],
+    ['min-lpnrn', 'lpnRn'],
+    ['min-total', 'total'],
+  ];
+  for (const [id, key] of cfg) {
+    const el = document.getElementById(id);
+    el.value = nysMinimums[key];
+    el.addEventListener('input', () => {
+      const v = parseFloat(el.value);
+      nysMinimums[key] = Number.isFinite(v) ? v : 0;
+      saveMinimums(nysMinimums);
+      if (currentReport) renderMinimumsLine(currentReport);
+    });
+  }
+  const resetBtn = document.getElementById('min-reset');
+  if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
+      nysMinimums = { ...MIN_DEFAULTS };
+      saveMinimums(nysMinimums);
+      for (const [id, key] of cfg) {
+        document.getElementById(id).value = nysMinimums[key];
+      }
+      if (currentReport) renderMinimumsLine(currentReport);
+    });
+  }
+}
+initMinimumInputs();
 
 // ---------- CSV export ----------
 
