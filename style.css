@@ -356,6 +356,79 @@ button.ghost:hover { background: #f2f4f8; color: var(--text); }
   color: var(--accent-dark);
 }
 
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(440px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.chart {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px 10px;
+  box-shadow: var(--shadow);
+}
+.chart-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.chart-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+.chart-legend {
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--muted);
+  flex-wrap: wrap;
+}
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.legend-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 3px;
+  border-radius: 2px;
+  background: currentColor;
+}
+.legend-swatch.legend-min {
+  background: repeating-linear-gradient(90deg, #9b2226 0 4px, transparent 4px 7px);
+  background-color: transparent;
+}
+.chart-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  font-family: inherit;
+}
+.chart-svg .grid { stroke: #eef1f5; stroke-width: 1; }
+.chart-svg .tick { font-size: 10px; fill: var(--muted); }
+.chart-svg .min {
+  stroke: #9b2226;
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+}
+.chart-svg .min-label {
+  font-size: 10px;
+  fill: #9b2226;
+  font-weight: 700;
+}
+.chart-svg .dot { opacity: 0.95; }
+
+@media (max-width: 780px) {
+  .charts-grid { grid-template-columns: 1fr; }
+}
+
 .breakdown summary {
   cursor: pointer;
   display: flex;

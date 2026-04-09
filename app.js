@@ -407,6 +407,9 @@ async function generateReport({ providerId, startDate, endDate, onProgress }) {
 
   const nySummary = summarizeNy(nyByDateMaps, startCompact, endCompact);
 
+  // Flatten per-day NY maps so monthly charts can look up any WorkDate directly.
+  const nyByDate = Object.assign({}, ...nyByDateMaps);
+
   return {
     providerId, startDate, endDate,
     facility,
@@ -417,6 +420,7 @@ async function generateReport({ providerId, startDate, endDate, onProgress }) {
     rowCount: allRows.length,
     summary: summarize(allRows),
     nySummary,
+    nyByDate,
     rows: allRows,
   };
 }
@@ -495,6 +499,7 @@ function renderReport(data) {
 
   renderBenchmark(data);
   renderMinimumsLine(data);
+  renderCharts(data);
   renderBreakdown(data);
   renderTable(data);
 
@@ -544,6 +549,202 @@ function renderBenchmark(data) {
       dEl.className = 'delta';
     }
   }
+}
+
+// ---------- monthly aggregation for charts ----------
+
+const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function workDateToMonthKey(d) { return `${d.slice(0,4)}-${d.slice(4,6)}`; }
+function monthKeyLabel(k) {
+  const [y, m] = k.split('-').map(Number);
+  return `${MONTH_LABELS[m-1]} ’${String(y).slice(2)}`;
+}
+
+function buildMonthlyBuckets(data) {
+  // Collect distinct months from facility rows in chronological order.
+  const monthOrder = [];
+  const seen = new Set();
+  for (const r of data.rows) {
+    const k = workDateToMonthKey(r.WorkDate);
+    if (!seen.has(k)) { seen.add(k); monthOrder.push(k); }
+  }
+
+  // Initialise bucket for each month.
+  const empty = () => ({
+    facCensus: 0, facCna: 0, facLpn: 0, facRn: 0,
+    nyCensus: 0,  nyCna: 0,  nyLpn: 0,  nyRn: 0,
+  });
+  const buckets = Object.fromEntries(monthOrder.map(k => [k, empty()]));
+
+  // Facility sums per month.
+  for (const r of data.rows) {
+    const b = buckets[workDateToMonthKey(r.WorkDate)];
+    b.facCensus += num(r.MDScensus);
+    b.facCna    += cnaHoursRow(r);
+    b.facLpn    += lpnHoursRow(r);
+    b.facRn     += rnHoursRow(r);
+  }
+
+  // NY sums per month, using only the dates inside the requested range that
+  // actually have a facility row (so NY and facility cover the same span).
+  const rangeDates = new Set(data.rows.map(r => r.WorkDate));
+  for (const d of rangeDates) {
+    const t = data.nyByDate?.[d];
+    if (!t) continue;
+    const b = buckets[workDateToMonthKey(d)];
+    if (!b) continue;
+    b.nyCensus += t.census;
+    b.nyCna    += t.cna;
+    b.nyLpn    += t.lpn;
+    b.nyRn     += t.rn;
+  }
+
+  // Turn into per-metric HPRD arrays aligned to monthOrder.
+  const hprd = (hours, census) => census > 0 ? hours / census : null;
+  const makeRow = (b) => ({
+    cna:   { fac: hprd(b.facCna, b.facCensus),                        ny: hprd(b.nyCna, b.nyCensus) },
+    lpn:   { fac: hprd(b.facLpn, b.facCensus),                        ny: hprd(b.nyLpn, b.nyCensus) },
+    rn:    { fac: hprd(b.facRn,  b.facCensus),                        ny: hprd(b.nyRn,  b.nyCensus) },
+    lpnRn: { fac: hprd(b.facLpn + b.facRn, b.facCensus),              ny: hprd(b.nyLpn + b.nyRn, b.nyCensus) },
+    total: { fac: hprd(b.facCna + b.facLpn + b.facRn, b.facCensus),   ny: hprd(b.nyCna + b.nyLpn + b.nyRn, b.nyCensus) },
+  });
+
+  const perMonth = monthOrder.map(k => ({ key: k, label: monthKeyLabel(k), ...makeRow(buckets[k]) }));
+  return perMonth;
+}
+
+// ---------- SVG line-chart builder ----------
+
+function buildLineChart({ title, months, series, minValue, minLabel, width = 560, height = 240 }) {
+  const margin = { top: 28, right: 16, bottom: 34, left: 46 };
+  const w = width - margin.left - margin.right;
+  const h = height - margin.top - margin.bottom;
+  const n = months.length;
+
+  // Y domain
+  let yMax = 0;
+  for (const s of series) {
+    for (const v of s.values) if (Number.isFinite(v) && v > yMax) yMax = v;
+  }
+  if (Number.isFinite(minValue) && minValue > yMax) yMax = minValue;
+  yMax = yMax > 0 ? yMax * 1.18 : 1;
+
+  const x = (i) => (n <= 1 ? w / 2 : (i / (n - 1)) * w);
+  const y = (v) => h - (v / yMax) * h;
+
+  // Y gridlines + labels
+  const yTicks = 5;
+  const grid = [];
+  for (let i = 0; i <= yTicks; i++) {
+    const yv = (yMax * i) / yTicks;
+    const yy = y(yv);
+    grid.push(`<line class="grid" x1="0" y1="${yy.toFixed(1)}" x2="${w}" y2="${yy.toFixed(1)}"/>`);
+    grid.push(`<text class="tick" x="-8" y="${yy.toFixed(1)}" text-anchor="end" dominant-baseline="middle">${yv.toFixed(2)}</text>`);
+  }
+
+  // X labels — thin out if too many to avoid overlap.
+  const maxLabels = Math.max(2, Math.min(n, Math.floor(w / 55)));
+  const stride = Math.max(1, Math.ceil(n / maxLabels));
+  const xLabels = [];
+  for (let i = 0; i < n; i++) {
+    if (i % stride !== 0 && i !== n - 1) continue;
+    const px = x(i);
+    xLabels.push(`<text class="tick" x="${px.toFixed(1)}" y="${(h + 18).toFixed(1)}" text-anchor="middle">${months[i]}</text>`);
+  }
+
+  // Min line (horizontal reference)
+  let minEl = '';
+  if (Number.isFinite(minValue) && minValue > 0) {
+    const my = y(minValue);
+    minEl = `
+      <line class="min" x1="0" y1="${my.toFixed(1)}" x2="${w}" y2="${my.toFixed(1)}"/>
+      <text class="min-label" x="${w}" y="${(my - 5).toFixed(1)}" text-anchor="end">${minLabel || 'Min'} ${minValue.toFixed(2)}</text>
+    `;
+  }
+
+  // Lines + dots for each series
+  const lines = [];
+  for (const s of series) {
+    const parts = [];
+    const dots = [];
+    let cmd = 'M';
+    for (let i = 0; i < n; i++) {
+      const v = s.values[i];
+      if (!Number.isFinite(v)) { cmd = 'M'; continue; }
+      const px = x(i); const py = y(v);
+      parts.push(`${cmd}${px.toFixed(1)},${py.toFixed(1)}`);
+      dots.push(`<circle class="dot" cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="3" fill="${s.color}"><title>${months[i]}: ${v.toFixed(2)}</title></circle>`);
+      cmd = 'L';
+    }
+    const dash = s.dash ? ` stroke-dasharray="${s.dash}"` : '';
+    lines.push(`<path d="${parts.join(' ')}" fill="none" stroke="${s.color}" stroke-width="${s.width || 2}"${dash}/>`);
+    lines.push(dots.join(''));
+  }
+
+  // Legend
+  const legendItems = series.map(s => `
+    <span class="legend-item">
+      <span class="legend-swatch" style="background:${s.color};${s.dash ? 'background-image:repeating-linear-gradient(90deg,'+s.color+' 0 4px,transparent 4px 7px);background-color:transparent;' : ''}"></span>
+      ${s.label}
+    </span>
+  `).join('');
+  const minLegend = Number.isFinite(minValue) && minValue > 0
+    ? `<span class="legend-item"><span class="legend-swatch legend-min"></span>NYS min ${minValue.toFixed(2)}</span>` : '';
+
+  return `
+    <div class="chart">
+      <div class="chart-head">
+        <div class="chart-title">${title}</div>
+        <div class="chart-legend">${legendItems}${minLegend}</div>
+      </div>
+      <svg class="chart-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
+        <g transform="translate(${margin.left}, ${margin.top})">
+          ${grid.join('')}
+          ${minEl}
+          ${lines.join('')}
+          <g>${xLabels.join('')}</g>
+        </g>
+      </svg>
+    </div>
+  `;
+}
+
+function renderCharts(data) {
+  const container = document.getElementById('charts');
+  if (!container) return;
+
+  const monthly = buildMonthlyBuckets(data);
+  if (monthly.length === 0) {
+    container.hidden = true;
+    container.innerHTML = '';
+    return;
+  }
+  container.hidden = false;
+
+  const months = monthly.map(m => m.label);
+  const facColor = '#1f5fae';
+  const nyColor  = '#5a6675';
+
+  const mkSeries = (key) => ([
+    { label: 'Facility', color: facColor, width: 2.5, values: monthly.map(m => m[key].fac) },
+    { label: 'NY avg',   color: nyColor,  width: 2,   dash: '5 4', values: monthly.map(m => m[key].ny) },
+  ]);
+
+  const charts = [
+    { key: 'cna',   title: 'CNA HPRD',      minValue: nysMinimums.cna   },
+    { key: 'lpn',   title: 'LPN HPRD',      minValue: null              },
+    { key: 'rn',    title: 'RN HPRD',       minValue: null              },
+    { key: 'lpnRn', title: 'LPN + RN HPRD', minValue: nysMinimums.lpnRn },
+    { key: 'total', title: 'Total HPRD',    minValue: nysMinimums.total },
+  ];
+
+  container.innerHTML = charts.map(c => buildLineChart({
+    title: c.title,
+    months,
+    series: mkSeries(c.key),
+    minValue: c.minValue,
+    minLabel: 'NYS min',
+  })).join('');
 }
 
 function renderMinimumsLine(data) {
@@ -747,7 +948,10 @@ function initMinimumInputs() {
       const v = parseFloat(el.value);
       nysMinimums[key] = Number.isFinite(v) ? v : 0;
       saveMinimums(nysMinimums);
-      if (currentReport) renderMinimumsLine(currentReport);
+      if (currentReport) {
+        renderMinimumsLine(currentReport);
+        renderCharts(currentReport);
+      }
     });
     el.addEventListener('blur', () => {
       el.value = fmtInput(nysMinimums[key]);
@@ -768,7 +972,10 @@ function initMinimumInputs() {
       for (const [id, key] of cfg) {
         document.getElementById(id).value = fmtInput(nysMinimums[key]);
       }
-      if (currentReport) renderMinimumsLine(currentReport);
+      if (currentReport) {
+        renderMinimumsLine(currentReport);
+        renderCharts(currentReport);
+      }
     });
   }
 }
