@@ -31,18 +31,6 @@ const STAFF_GROUPS = [
   { key: 'MedAide', label: 'Med Aide',   field: 'Hrs_MedAide' },
 ];
 
-const NUMERIC_FIELDS = [
-  'MDScensus',
-  'Hrs_RNDON', 'Hrs_RNDON_emp', 'Hrs_RNDON_ctr',
-  'Hrs_RNadmin', 'Hrs_RNadmin_emp', 'Hrs_RNadmin_ctr',
-  'Hrs_RN', 'Hrs_RN_emp', 'Hrs_RN_ctr',
-  'Hrs_LPNadmin', 'Hrs_LPNadmin_emp', 'Hrs_LPNadmin_ctr',
-  'Hrs_LPN', 'Hrs_LPN_emp', 'Hrs_LPN_ctr',
-  'Hrs_CNA', 'Hrs_CNA_emp', 'Hrs_CNA_ctr',
-  'Hrs_NAtrn', 'Hrs_NAtrn_emp', 'Hrs_NAtrn_ctr',
-  'Hrs_MedAide', 'Hrs_MedAide_emp', 'Hrs_MedAide_ctr',
-];
-
 // ---------- formatters ----------
 
 const fmt1 = new Intl.NumberFormat('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -149,30 +137,45 @@ async function fetchQuarterForProvider(accessURL, providerId) {
 
 // ---------- summary ----------
 
+// Aggregations matching user-requested stats:
+//   CNA (CNA_AND_MEDAIDE) = Hrs_CNA + Hrs_MedAide
+//   LPN (LPN_NON_ADMIN)   = Hrs_LPN
+//   RN  (RN_ALL)          = Hrs_RN + Hrs_RNDON + Hrs_RNadmin
+//   LPN+RN                = LPN + RN
+//   Total                 = CNA + LPN + RN
+// Note: Hrs_LPNadmin and Hrs_NAtrn are intentionally excluded.
+const cnaHoursRow   = (r) => num(r.Hrs_CNA) + num(r.Hrs_MedAide);
+const lpnHoursRow   = (r) => num(r.Hrs_LPN);
+const rnHoursRow    = (r) => num(r.Hrs_RN) + num(r.Hrs_RNDON) + num(r.Hrs_RNadmin);
+const lpnRnHoursRow = (r) => lpnHoursRow(r) + rnHoursRow(r);
+const totalHoursRow = (r) => cnaHoursRow(r) + lpnRnHoursRow(r);
+
 function summarize(rows) {
-  const totals = Object.fromEntries(NUMERIC_FIELDS.map(f => [f, 0]));
-  let censusDays = 0;
+  let totalCensus = 0, censusDays = 0;
+  let cnaHours = 0, lpnHours = 0, rnHours = 0;
   for (const r of rows) {
-    for (const f of NUMERIC_FIELDS) totals[f] += num(r[f]);
-    if (num(r.MDScensus) > 0) censusDays += 1;
+    const c = num(r.MDScensus);
+    totalCensus += c;
+    if (c > 0) censusDays += 1;
+    cnaHours += cnaHoursRow(r);
+    lpnHours += lpnHoursRow(r);
+    rnHours  += rnHoursRow(r);
   }
-  const totalCensus = totals.MDScensus;
-  const totalNurseHours =
-    totals.Hrs_RN + totals.Hrs_LPN + totals.Hrs_CNA +
-    totals.Hrs_RNDON + totals.Hrs_RNadmin + totals.Hrs_LPNadmin +
-    totals.Hrs_NAtrn + totals.Hrs_MedAide;
+  const lpnRnHours = lpnHours + rnHours;
+  const totalNurseHours = cnaHours + lpnRnHours;
   const hprd = (s) => totalCensus > 0 ? s / totalCensus : 0;
   return {
     days: rows.length,
     censusDays,
     totalCensus,
     avgDailyCensus: censusDays > 0 ? totalCensus / censusDays : 0,
-    totalNurseHours,
-    hppd: {
+    hours: { cna: cnaHours, lpn: lpnHours, rn: rnHours, lpnRn: lpnRnHours, total: totalNurseHours },
+    hprd: {
+      cna:   hprd(cnaHours),
+      lpn:   hprd(lpnHours),
+      rn:    hprd(rnHours),
+      lpnRn: hprd(lpnRnHours),
       total: hprd(totalNurseHours),
-      rn: hprd(totals.Hrs_RN + totals.Hrs_RNDON + totals.Hrs_RNadmin),
-      lpn: hprd(totals.Hrs_LPN + totals.Hrs_LPNadmin),
-      cna: hprd(totals.Hrs_CNA + totals.Hrs_NAtrn + totals.Hrs_MedAide),
     },
   };
 }
@@ -310,21 +313,22 @@ form.addEventListener('submit', async (e) => {
 function renderReport(data) {
   resultsEl.hidden = false;
 
+  const s = data.summary;
   const f = data.facility || {};
   $('#f-name').textContent = f.provname || '(unknown facility)';
   $('#f-loc').textContent = [f.city, f.state].filter(Boolean).join(', ');
   $('#f-meta').textContent = `CCN ${f.provnum} · ${f.county || ''}`.trim();
   $('#f-range').textContent = `${data.startDate} → ${data.endDate}`;
   $('#f-days').textContent =
-    `${data.rowCount} days reported across ${data.quartersQueried.length} quarter(s)`;
+    `${data.rowCount} days across ${data.quartersQueried.length} quarter(s) · ` +
+    `avg census ${fmt1.format(s.avgDailyCensus)} · ` +
+    `${fmt0.format(s.hours.total)} total nurse hours`;
 
-  const s = data.summary;
-  $('#m-census').textContent = fmt1.format(s.avgDailyCensus);
-  $('#m-hours').textContent = fmt0.format(s.totalNurseHours);
-  $('#m-hprd').textContent = fmt2.format(s.hppd.total);
-  $('#m-rn').textContent = fmt2.format(s.hppd.rn);
-  $('#m-lpn').textContent = fmt2.format(s.hppd.lpn);
-  $('#m-cna').textContent = fmt2.format(s.hppd.cna);
+  $('#m-cna').textContent   = fmt2.format(s.hprd.cna);
+  $('#m-lpn').textContent   = fmt2.format(s.hprd.lpn);
+  $('#m-rn').textContent    = fmt2.format(s.hprd.rn);
+  $('#m-lpnrn').textContent = fmt2.format(s.hprd.lpnRn);
+  $('#m-total').textContent = fmt2.format(s.hprd.total);
 
   renderTable(data);
 
@@ -358,10 +362,8 @@ function renderTable(data) {
 
   for (const r of data.rows) {
     const cells = [workDateToISO(r.WorkDate), fmt0.format(num(r.MDScensus))];
-    let dayHours = 0;
     for (const g of STAFF_GROUPS) {
       const total = num(r[g.field]);
-      dayHours += total;
       if (split) {
         cells.push(
           fmt2.format(total),
@@ -372,6 +374,7 @@ function renderTable(data) {
         cells.push(fmt2.format(total));
       }
     }
+    const dayHours = totalHoursRow(r); // CNA + LPN_non_admin + RN_all
     const census = num(r.MDScensus);
     const hprd = census > 0 ? dayHours / census : 0;
     cells.push(fmt2.format(dayHours), fmt2.format(hprd));
