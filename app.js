@@ -739,15 +739,26 @@ function initMinimumInputs() {
     ['min-lpnrn', 'lpnRn'],
     ['min-total', 'total'],
   ];
+  const fmtInput = (v) => (Number.isFinite(v) ? v : 0).toFixed(2);
   for (const [id, key] of cfg) {
     const el = document.getElementById(id);
-    el.value = nysMinimums[key];
+    el.value = fmtInput(nysMinimums[key]);
     el.addEventListener('input', () => {
       const v = parseFloat(el.value);
       nysMinimums[key] = Number.isFinite(v) ? v : 0;
       saveMinimums(nysMinimums);
       if (currentReport) renderMinimumsLine(currentReport);
     });
+    el.addEventListener('blur', () => {
+      el.value = fmtInput(nysMinimums[key]);
+    });
+    // Click anywhere on the tile focuses the input
+    const tile = el.closest('.min-tile');
+    if (tile) {
+      tile.addEventListener('click', (e) => {
+        if (e.target !== el) el.focus();
+      });
+    }
   }
   const resetBtn = document.getElementById('min-reset');
   if (resetBtn) {
@@ -755,7 +766,7 @@ function initMinimumInputs() {
       nysMinimums = { ...MIN_DEFAULTS };
       saveMinimums(nysMinimums);
       for (const [id, key] of cfg) {
-        document.getElementById(id).value = nysMinimums[key];
+        document.getElementById(id).value = fmtInput(nysMinimums[key]);
       }
       if (currentReport) renderMinimumsLine(currentReport);
     });

@@ -66,25 +66,28 @@
       <div class="minimums-header">
         <div>
           <div class="minimums-title">NYS Minimum Staffing Requirements</div>
-          <div class="muted">NY nursing-home staffing law (10 NYCRR 415.13). Edit if NYS updates these.</div>
+          <div class="muted">Statute: 10 NYCRR 415.13 · Click any value to edit if NYS changes the law.</div>
         </div>
-        <button type="button" id="min-reset" class="ghost">Reset defaults</button>
+        <button type="button" id="min-reset" class="ghost">Reset to defaults</button>
       </div>
       <div class="minimums-grid">
-        <label class="min-field">
-          <span class="label">CNA minimum HPRD</span>
-          <input type="number" id="min-cna" step="0.01" min="0" />
-          <span class="muted">Hours per resident day by CNAs (incl. Med Aide).</span>
+        <label class="min-tile">
+          <span class="min-label">CNA</span>
+          <input type="number" id="min-cna" step="0.01" min="0" value="2.20" />
+          <span class="min-unit">HPRD minimum</span>
+          <span class="min-desc">CNA + Med Aide hours per resident day</span>
         </label>
-        <label class="min-field">
-          <span class="label">LPN + RN minimum HPRD</span>
-          <input type="number" id="min-lpnrn" step="0.01" min="0" />
-          <span class="muted">Hours per resident day by licensed nurses (LPN + RN).</span>
+        <label class="min-tile">
+          <span class="min-label">LPN + RN</span>
+          <input type="number" id="min-lpnrn" step="0.01" min="0" value="1.10" />
+          <span class="min-unit">HPRD minimum</span>
+          <span class="min-desc">Licensed nurse hours per resident day</span>
         </label>
-        <label class="min-field">
-          <span class="label">Total minimum HPRD</span>
-          <input type="number" id="min-total" step="0.01" min="0" />
-          <span class="muted">Combined CNA + LPN + RN hours per resident day.</span>
+        <label class="min-tile">
+          <span class="min-label">Total</span>
+          <input type="number" id="min-total" step="0.01" min="0" value="3.50" />
+          <span class="min-unit">HPRD minimum</span>
+          <span class="min-desc">All nurse staffing hours per resident day</span>
         </label>
       </div>
     </section>
