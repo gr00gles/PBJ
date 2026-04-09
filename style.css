@@ -155,6 +155,84 @@ button:disabled { opacity: 0.6; cursor: wait; }
   box-shadow: var(--shadow);
 }
 .metric .big { font-size: 22px; }
+
+.breakdown summary {
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+  font-size: 16px;
+  list-style: none;
+}
+.breakdown summary::-webkit-details-marker { display: none; }
+.breakdown[open] summary { margin-bottom: 16px; }
+.breakdown h3 {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin: 0 0 8px;
+}
+.breakdown-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 24px;
+}
+.breakdown-grid p { margin: 8px 0 0; font-size: 12px; line-height: 1.5; }
+.breakdown code {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  background: #f2f4f8;
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.kv-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.kv-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  text-align: left;
+  white-space: normal;
+}
+.kv-table td.num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+.kv-table tr.excluded td { color: var(--muted); background: #fafbfc; }
+.kv-table tr.excluded td:first-child { text-decoration: line-through; }
+.kv-table .excluded-tag {
+  font-size: 10px;
+  background: #f0e6d6;
+  color: #7a5a1a;
+  padding: 1px 6px;
+  border-radius: 10px;
+  margin-left: 6px;
+  vertical-align: middle;
+  text-decoration: none;
+  display: inline-block;
+}
+.kv-table tr.formula-total td {
+  background: #f2f7fd;
+  border-top: 2px solid var(--border);
+  border-bottom: 2px solid var(--border);
+}
+.kv-table tr.excluded-row td {
+  font-size: 12px;
+  background: #fcfcfc;
+  border-bottom: none;
+}
+
+@media (max-width: 780px) {
+  .breakdown-grid { grid-template-columns: 1fr; }
+}
+
 .metric.total {
   background: var(--accent);
   border-color: var(--accent-dark);

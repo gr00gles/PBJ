@@ -150,26 +150,37 @@ const rnHoursRow    = (r) => num(r.Hrs_RN) + num(r.Hrs_RNDON) + num(r.Hrs_RNadmi
 const lpnRnHoursRow = (r) => lpnHoursRow(r) + rnHoursRow(r);
 const totalHoursRow = (r) => cnaHoursRow(r) + lpnRnHoursRow(r);
 
+// Every raw Hrs_* field, so the breakdown panel can show what's in the data
+// (including the fields we intentionally exclude from the totals).
+const RAW_HOUR_FIELDS = [
+  'Hrs_RN', 'Hrs_RNDON', 'Hrs_RNadmin',
+  'Hrs_LPN', 'Hrs_LPNadmin',
+  'Hrs_CNA', 'Hrs_NAtrn', 'Hrs_MedAide',
+];
+
 function summarize(rows) {
   let totalCensus = 0, censusDays = 0;
-  let cnaHours = 0, lpnHours = 0, rnHours = 0;
+  const fieldTotals = Object.fromEntries(RAW_HOUR_FIELDS.map(f => [f, 0]));
   for (const r of rows) {
     const c = num(r.MDScensus);
     totalCensus += c;
     if (c > 0) censusDays += 1;
-    cnaHours += cnaHoursRow(r);
-    lpnHours += lpnHoursRow(r);
-    rnHours  += rnHoursRow(r);
+    for (const f of RAW_HOUR_FIELDS) fieldTotals[f] += num(r[f]);
   }
+  const cnaHours   = fieldTotals.Hrs_CNA + fieldTotals.Hrs_MedAide;
+  const lpnHours   = fieldTotals.Hrs_LPN;
+  const rnHours    = fieldTotals.Hrs_RN + fieldTotals.Hrs_RNDON + fieldTotals.Hrs_RNadmin;
   const lpnRnHours = lpnHours + rnHours;
   const totalNurseHours = cnaHours + lpnRnHours;
+  const excludedHours = fieldTotals.Hrs_LPNadmin + fieldTotals.Hrs_NAtrn;
   const hprd = (s) => totalCensus > 0 ? s / totalCensus : 0;
   return {
     days: rows.length,
     censusDays,
     totalCensus,
     avgDailyCensus: censusDays > 0 ? totalCensus / censusDays : 0,
-    hours: { cna: cnaHours, lpn: lpnHours, rn: rnHours, lpnRn: lpnRnHours, total: totalNurseHours },
+    fieldTotals,
+    hours: { cna: cnaHours, lpn: lpnHours, rn: rnHours, lpnRn: lpnRnHours, total: totalNurseHours, excluded: excludedHours },
     hprd: {
       cna:   hprd(cnaHours),
       lpn:   hprd(lpnHours),
@@ -330,6 +341,7 @@ function renderReport(data) {
   $('#m-lpnrn').textContent = fmt2.format(s.hprd.lpnRn);
   $('#m-total').textContent = fmt2.format(s.hprd.total);
 
+  renderBreakdown(data);
   renderTable(data);
 
   const notes = [];
@@ -340,6 +352,77 @@ function renderReport(data) {
     notes.push(`Errors fetching: ${data.errors.map(e => `${e.quarter} (${e.error})`).join('; ')}.`);
   }
   $('#notes').textContent = notes.join(' ');
+}
+
+function renderBreakdown(data) {
+  const s = data.summary;
+  const ft = s.fieldTotals;
+  const fmtH = (v) => fmt2.format(v) + ' hrs';
+  const RAW_LABELS = {
+    Hrs_RN:       ['Hrs_RN',       'RN (direct care)',     true],
+    Hrs_RNDON:    ['Hrs_RNDON',    'RN Director of Nursing', true],
+    Hrs_RNadmin:  ['Hrs_RNadmin',  'RN with admin duties', true],
+    Hrs_LPN:      ['Hrs_LPN',      'LPN (direct care)',    true],
+    Hrs_LPNadmin: ['Hrs_LPNadmin', 'LPN with admin duties', false],
+    Hrs_CNA:      ['Hrs_CNA',      'CNA',                  true],
+    Hrs_NAtrn:    ['Hrs_NAtrn',    'Nurse Aide in training', false],
+    Hrs_MedAide:  ['Hrs_MedAide',  'Medication Aide',      true],
+  };
+
+  const rawRows = RAW_HOUR_FIELDS.map(f => {
+    const [name, desc, included] = RAW_LABELS[f];
+    const cls = included ? '' : 'class="excluded"';
+    const note = included ? '' : ' <span class="excluded-tag">excluded</span>';
+    return `<tr ${cls}><td><code>${name}</code>${note}</td><td class="num">${fmtH(ft[f])}</td><td class="muted">${desc}</td></tr>`;
+  }).join('');
+  $('#raw-table').innerHTML = rawRows;
+
+  const censusRows = `
+    <tr><td>Days in result</td><td class="num">${fmt0.format(s.days)}</td></tr>
+    <tr><td>Days with census &gt; 0</td><td class="num">${fmt0.format(s.censusDays)}</td></tr>
+    <tr><td>Avg daily census</td><td class="num">${fmt2.format(s.avgDailyCensus)}</td></tr>
+    <tr><td><strong>Total resident-days</strong> (denominator)</td><td class="num"><strong>${fmt0.format(s.totalCensus)}</strong></td></tr>
+  `;
+  $('#census-table').innerHTML = censusRows;
+
+  const denom = s.totalCensus;
+  const showHprd = (hours) => denom > 0 ? `${fmt2.format(hours)} ÷ ${fmt0.format(denom)} = <strong>${fmt2.format(hours/denom)}</strong>` : '—';
+
+  const formulaRows = `
+    <tr>
+      <td><strong>CNA HPRD</strong><br><span class="muted">Hrs_CNA + Hrs_MedAide</span></td>
+      <td class="num">${fmt2.format(ft.Hrs_CNA)} + ${fmt2.format(ft.Hrs_MedAide)} = ${fmt2.format(s.hours.cna)}</td>
+      <td class="num">${showHprd(s.hours.cna)}</td>
+    </tr>
+    <tr>
+      <td><strong>LPN HPRD</strong><br><span class="muted">Hrs_LPN</span></td>
+      <td class="num">${fmt2.format(s.hours.lpn)}</td>
+      <td class="num">${showHprd(s.hours.lpn)}</td>
+    </tr>
+    <tr>
+      <td><strong>RN HPRD</strong><br><span class="muted">Hrs_RN + Hrs_RNDON + Hrs_RNadmin</span></td>
+      <td class="num">${fmt2.format(ft.Hrs_RN)} + ${fmt2.format(ft.Hrs_RNDON)} + ${fmt2.format(ft.Hrs_RNadmin)} = ${fmt2.format(s.hours.rn)}</td>
+      <td class="num">${showHprd(s.hours.rn)}</td>
+    </tr>
+    <tr>
+      <td><strong>LPN + RN HPRD</strong><br><span class="muted">LPN + RN</span></td>
+      <td class="num">${fmt2.format(s.hours.lpn)} + ${fmt2.format(s.hours.rn)} = ${fmt2.format(s.hours.lpnRn)}</td>
+      <td class="num">${showHprd(s.hours.lpnRn)}</td>
+    </tr>
+    <tr class="formula-total">
+      <td><strong>Total HPRD</strong><br><span class="muted">CNA + LPN + RN</span></td>
+      <td class="num">${fmt2.format(s.hours.cna)} + ${fmt2.format(s.hours.lpnRn)} = ${fmt2.format(s.hours.total)}</td>
+      <td class="num">${showHprd(s.hours.total)}</td>
+    </tr>
+    <tr class="excluded-row">
+      <td colspan="3" class="muted">
+        Excluded from totals: <code>Hrs_LPNadmin</code> (${fmt2.format(ft.Hrs_LPNadmin)} hrs) and
+        <code>Hrs_NAtrn</code> (${fmt2.format(ft.Hrs_NAtrn)} hrs) — total ${fmt2.format(s.hours.excluded)} hrs.
+        If you include these, Total HPRD becomes <strong>${denom > 0 ? fmt2.format((s.hours.total + s.hours.excluded) / denom) : '—'}</strong>.
+      </td>
+    </tr>
+  `;
+  $('#formula-table').innerHTML = formulaRows;
 }
 
 function renderTable(data) {

@@ -87,6 +87,27 @@
         </div>
       </div>
 
+      <details class="card breakdown" open>
+        <summary>
+          <span>Calculation breakdown</span>
+          <span class="muted">click to collapse</span>
+        </summary>
+        <div class="breakdown-grid">
+          <div>
+            <h3>Raw field sums (hours over the period)</h3>
+            <table id="raw-table" class="kv-table"></table>
+            <p class="muted">Sums of every <code>Hrs_*</code> field returned by CMS, summed across all days in the range. The two greyed-out rows are excluded from every metric below per your definitions.</p>
+          </div>
+          <div>
+            <h3>Census denominator</h3>
+            <table id="census-table" class="kv-table"></table>
+            <p class="muted">HPRD = (sum of staff hours) ÷ (sum of MDScensus across all days). Per CMS methodology, the denominator is the <em>total resident-days</em>, not the average daily census.</p>
+            <h3 style="margin-top:18px">Per-metric arithmetic</h3>
+            <table id="formula-table" class="kv-table"></table>
+          </div>
+        </div>
+      </details>
+
       <div class="card">
         <div class="table-header">
           <h2>Daily detail</h2>
