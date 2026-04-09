@@ -615,7 +615,7 @@ function buildMonthlyBuckets(data) {
 
 // ---------- SVG line-chart builder ----------
 
-function buildLineChart({ title, months, series, minValue, minLabel, width = 560, height = 240 }) {
+function buildLineChart({ title, months, series, minValue, minLabel, deltas, width = 560, height = 240 }) {
   const margin = { top: 28, right: 16, bottom: 34, left: 46 };
   const w = width - margin.left - margin.right;
   const h = height - margin.top - margin.bottom;
@@ -662,23 +662,20 @@ function buildLineChart({ title, months, series, minValue, minLabel, width = 560
     `;
   }
 
-  // Lines + dots for each series
+  // Lines for each series (no dots — clean lines per user preference).
   const lines = [];
   for (const s of series) {
     const parts = [];
-    const dots = [];
     let cmd = 'M';
     for (let i = 0; i < n; i++) {
       const v = s.values[i];
       if (!Number.isFinite(v)) { cmd = 'M'; continue; }
       const px = x(i); const py = y(v);
       parts.push(`${cmd}${px.toFixed(1)},${py.toFixed(1)}`);
-      dots.push(`<circle class="dot" cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="3" fill="${s.color}"><title>${months[i]}: ${v.toFixed(2)}</title></circle>`);
       cmd = 'L';
     }
     const dash = s.dash ? ` stroke-dasharray="${s.dash}"` : '';
-    lines.push(`<path d="${parts.join(' ')}" fill="none" stroke="${s.color}" stroke-width="${s.width || 2}"${dash}/>`);
-    lines.push(dots.join(''));
+    lines.push(`<path d="${parts.join(' ')}" fill="none" stroke="${s.color}" stroke-width="${s.width || 2}" stroke-linecap="round" stroke-linejoin="round"${dash}/>`);
   }
 
   // Legend
@@ -691,10 +688,24 @@ function buildLineChart({ title, months, series, minValue, minLabel, width = 560
   const minLegend = Number.isFinite(minValue) && minValue > 0
     ? `<span class="legend-item"><span class="legend-swatch legend-min"></span>NYS min ${minValue.toFixed(2)}</span>` : '';
 
+  // Deltas under the title (NY avg and NYS min if provided)
+  const pill = (d) => {
+    if (!d) return '';
+    const cls = d.cls || 'neutral';
+    const arrow = d.dir === 'up' ? '↑' : d.dir === 'down' ? '↓' : '→';
+    return `<span class="chart-delta ${cls}">${arrow} ${d.pct} ${d.suffix}</span>`;
+  };
+  const deltasHtml = deltas && (deltas.ny || deltas.min)
+    ? `<div class="chart-deltas">${pill(deltas.ny)}${pill(deltas.min)}</div>`
+    : '';
+
   return `
     <div class="chart">
       <div class="chart-head">
-        <div class="chart-title">${title}</div>
+        <div class="chart-title-wrap">
+          <div class="chart-title">${title}</div>
+          ${deltasHtml}
+        </div>
         <div class="chart-legend">${legendItems}${minLegend}</div>
       </div>
       <svg class="chart-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
@@ -707,6 +718,18 @@ function buildLineChart({ title, months, series, minValue, minLabel, width = 560
       </svg>
     </div>
   `;
+}
+
+// Given a facility HPRD and a reference value, produce a delta descriptor.
+function deltaDescriptor(facVal, refVal, suffix) {
+  if (!Number.isFinite(facVal) || !Number.isFinite(refVal) || refVal <= 0) return null;
+  const diff = facVal - refVal;
+  const pct = (diff / refVal) * 100;
+  let cls, dir;
+  if (Math.abs(pct) < 2) { cls = 'neutral'; dir = 'flat'; }
+  else if (pct >= 0)     { cls = 'good';    dir = 'up';   }
+  else                   { cls = 'bad';     dir = 'down'; }
+  return { pct: `${Math.abs(pct).toFixed(1)}%`, cls, dir, suffix };
 }
 
 function renderCharts(data) {
@@ -738,13 +761,23 @@ function renderCharts(data) {
     { key: 'total', title: 'Total HPRD',    minValue: nysMinimums.total },
   ];
 
-  container.innerHTML = charts.map(c => buildLineChart({
-    title: c.title,
-    months,
-    series: mkSeries(c.key),
-    minValue: c.minValue,
-    minLabel: 'NYS min',
-  })).join('');
+  const facHprd = data.summary.hprd;
+  const nyHprd = data.nySummary && data.nySummary.census > 0 ? data.nySummary.hprd : null;
+
+  container.innerHTML = charts.map(c => {
+    const deltas = {
+      ny:  nyHprd ? deltaDescriptor(facHprd[c.key], nyHprd[c.key], 'vs NY avg') : null,
+      min: c.minValue ? deltaDescriptor(facHprd[c.key], c.minValue, 'vs NYS min') : null,
+    };
+    return buildLineChart({
+      title: c.title,
+      months,
+      series: mkSeries(c.key),
+      minValue: c.minValue,
+      minLabel: 'NYS min',
+      deltas,
+    });
+  }).join('');
 }
 
 function renderMinimumsLine(data) {
