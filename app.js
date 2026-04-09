@@ -1051,6 +1051,319 @@ function csvCell(v) {
   return s;
 }
 
+// ---------- Excel export ----------
+
+// Rasterize a chart's SVG (already sized via viewBox) to a PNG data URL for
+// embedding in an Excel sheet. Returns { base64, width, height }.
+async function svgToPngBase64(svgEl, scale = 2) {
+  const serializer = new XMLSerializer();
+  let source = serializer.serializeToString(svgEl);
+  // Make sure the SVG has the xmlns so the <img> can load it.
+  if (!source.includes('xmlns="http://www.w3.org/2000/svg"')) {
+    source = source.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+  }
+  // Pull natural dimensions from viewBox if width/height aren't numeric.
+  const vb = (svgEl.getAttribute('viewBox') || '0 0 560 240').split(/\s+/).map(Number);
+  const baseW = vb[2] || 560;
+  const baseH = vb[3] || 240;
+
+  const blob = new Blob([source], { type: 'image/svg+xml;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  try {
+    const img = new Image();
+    img.decoding = 'async';
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url; });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(baseW * scale);
+    canvas.height = Math.round(baseH * scale);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL('image/png');
+    return { base64: dataUrl.split(',')[1], width: baseW, height: baseH };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+// Aggregate NY data into one row per month (for the NY state monthly tab).
+function nyMonthlyRows(nyByDate, startCompact, endCompact) {
+  const months = {};
+  for (const [d, t] of Object.entries(nyByDate || {})) {
+    if (d < startCompact || d > endCompact) continue;
+    const k = workDateToMonthKey(d);
+    const m = months[k] || (months[k] = {
+      month: k, days: 0, rows: 0,
+      census: 0, cna: 0, lpn: 0, rn: 0, lpnAdmin: 0, naTrn: 0,
+    });
+    m.days     += 1;
+    m.rows     += t.rows;
+    m.census   += t.census;
+    m.cna      += t.cna;
+    m.lpn      += t.lpn;
+    m.rn       += t.rn;
+    m.lpnAdmin += t.lpnAdmin;
+    m.naTrn    += t.naTrn;
+  }
+  const out = Object.values(months).sort((a, b) => a.month.localeCompare(b.month));
+  for (const m of out) {
+    const hprd = (h) => m.census > 0 ? h / m.census : null;
+    m.cna_hprd   = hprd(m.cna);
+    m.lpn_hprd   = hprd(m.lpn);
+    m.rn_hprd    = hprd(m.rn);
+    m.lpnRn_hprd = hprd(m.lpn + m.rn);
+    m.total_hprd = hprd(m.cna + m.lpn + m.rn);
+  }
+  return out;
+}
+
+// Short helpers for building metric tabs.
+const METRIC_DEFS = [
+  { key: 'cna',   label: 'CNA HPRD',      desc: 'Hrs_CNA + Hrs_MedAide',                  minKey: 'cna'   },
+  { key: 'lpn',   label: 'LPN HPRD',      desc: 'Hrs_LPN',                                minKey: null    },
+  { key: 'rn',    label: 'RN HPRD',       desc: 'Hrs_RN + Hrs_RNDON + Hrs_RNadmin',       minKey: null    },
+  { key: 'lpnRn', label: 'LPN + RN HPRD', desc: 'LPN + RN',                               minKey: 'lpnRn' },
+  { key: 'total', label: 'Total HPRD',    desc: 'CNA + LPN + RN',                         minKey: 'total' },
+];
+
+function metricHoursRow(key, r) {
+  switch (key) {
+    case 'cna':   return cnaHoursRow(r);
+    case 'lpn':   return lpnHoursRow(r);
+    case 'rn':    return rnHoursRow(r);
+    case 'lpnRn': return lpnRnHoursRow(r);
+    case 'total': return totalHoursRow(r);
+  }
+  return 0;
+}
+
+async function exportExcel() {
+  if (!currentReport) return;
+  if (typeof ExcelJS === 'undefined') {
+    alert('Excel library is still loading. Please try again in a moment.');
+    return;
+  }
+  const data = currentReport;
+  const report = `PBJ_${data.providerId}_${data.startDate}_${data.endDate}`;
+
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'PBJ Daily Nurse Staffing Reports';
+  wb.created = new Date();
+
+  const HEADER_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F4F8' } };
+  const HEADER_FONT = { bold: true, color: { argb: 'FF1B2330' } };
+  const NUM2 = '0.00';
+  const NUM0 = '#,##0';
+
+  const styleHeader = (ws, rowNum) => {
+    const row = ws.getRow(rowNum);
+    row.font = HEADER_FONT;
+    row.fill = HEADER_FILL;
+    row.alignment = { vertical: 'middle' };
+  };
+
+  // ---- Tab 1: All PBJ Data ----
+  {
+    const ws = wb.addWorksheet('All PBJ Data');
+    const cols = [
+      { header: 'PROVNUM',     key: 'PROVNUM',     width: 10 },
+      { header: 'PROVNAME',    key: 'PROVNAME',    width: 36 },
+      { header: 'CITY',        key: 'CITY',        width: 18 },
+      { header: 'STATE',       key: 'STATE',       width: 7 },
+      { header: 'COUNTY_NAME', key: 'COUNTY_NAME', width: 16 },
+      { header: 'CY_Qtr',      key: 'CY_Qtr',      width: 9 },
+      { header: 'WorkDate',    key: 'WorkDate',    width: 12 },
+      { header: 'MDScensus',   key: 'MDScensus',   width: 11, numFmt: NUM0 },
+    ];
+    const hrCols = [
+      'Hrs_RN','Hrs_RN_emp','Hrs_RN_ctr',
+      'Hrs_RNDON','Hrs_RNDON_emp','Hrs_RNDON_ctr',
+      'Hrs_RNadmin','Hrs_RNadmin_emp','Hrs_RNadmin_ctr',
+      'Hrs_LPN','Hrs_LPN_emp','Hrs_LPN_ctr',
+      'Hrs_LPNadmin','Hrs_LPNadmin_emp','Hrs_LPNadmin_ctr',
+      'Hrs_CNA','Hrs_CNA_emp','Hrs_CNA_ctr',
+      'Hrs_NAtrn','Hrs_NAtrn_emp','Hrs_NAtrn_ctr',
+      'Hrs_MedAide','Hrs_MedAide_emp','Hrs_MedAide_ctr',
+    ];
+    for (const h of hrCols) cols.push({ header: h, key: h, width: 13, numFmt: NUM2 });
+    ws.columns = cols;
+    for (const r of data.rows) {
+      const rowObj = {};
+      for (const c of cols) {
+        const k = c.key;
+        if (k === 'WorkDate') {
+          rowObj[k] = workDateToISO(r.WorkDate);
+        } else if (k === 'MDScensus' || k.startsWith('Hrs_')) {
+          rowObj[k] = num(r[k]);
+        } else {
+          rowObj[k] = r[k] || '';
+        }
+      }
+      ws.addRow(rowObj);
+    }
+    styleHeader(ws, 1);
+    ws.views = [{ state: 'frozen', ySplit: 1 }];
+  }
+
+  // ---- Tab 2: NY State Monthly ----
+  {
+    const ws = wb.addWorksheet('NY State Monthly');
+    ws.columns = [
+      { header: 'Month',              key: 'month',    width: 10 },
+      { header: 'Days',               key: 'days',     width: 8,  numFmt: NUM0 },
+      { header: 'Facility-day rows',  key: 'rows',     width: 18, numFmt: NUM0 },
+      { header: 'NY resident-days',   key: 'census',   width: 18, numFmt: NUM0 },
+      { header: 'CNA hours',          key: 'cna',      width: 15, numFmt: NUM0 },
+      { header: 'LPN hours',          key: 'lpn',      width: 15, numFmt: NUM0 },
+      { header: 'RN hours',           key: 'rn',       width: 15, numFmt: NUM0 },
+      { header: 'LPN admin hrs',      key: 'lpnAdmin', width: 15, numFmt: NUM0 },
+      { header: 'NA trainee hrs',     key: 'naTrn',    width: 15, numFmt: NUM0 },
+      { header: 'CNA HPRD',           key: 'cna_hprd', width: 12, numFmt: NUM2 },
+      { header: 'LPN HPRD',           key: 'lpn_hprd', width: 12, numFmt: NUM2 },
+      { header: 'RN HPRD',            key: 'rn_hprd',  width: 12, numFmt: NUM2 },
+      { header: 'LPN+RN HPRD',        key: 'lpnRn_hprd', width: 14, numFmt: NUM2 },
+      { header: 'Total HPRD',         key: 'total_hprd', width: 13, numFmt: NUM2 },
+    ];
+    const startCompact = isoToCompact(data.startDate);
+    const endCompact = isoToCompact(data.endDate);
+    const monthly = nyMonthlyRows(data.nyByDate, startCompact, endCompact);
+    for (const m of monthly) ws.addRow(m);
+    styleHeader(ws, 1);
+    ws.views = [{ state: 'frozen', ySplit: 1 }];
+  }
+
+  // ---- Tabs 3-7: one per metric ----
+  const perMonth = buildMonthlyBuckets(data);
+  const chartSvgs = [...document.querySelectorAll('#charts .chart-svg')];
+  const chartByKey = {
+    cna:   chartSvgs[0],
+    lpn:   chartSvgs[1],
+    rn:    chartSvgs[2],
+    lpnRn: chartSvgs[3],
+    total: chartSvgs[4],
+  };
+
+  for (const def of METRIC_DEFS) {
+    const ws = wb.addWorksheet(def.label.replace(' HPRD', ''));
+    const minVal = def.minKey ? nysMinimums[def.minKey] : null;
+
+    // Header / summary block
+    ws.mergeCells('A1:G1');
+    ws.getCell('A1').value = `${def.label} (${def.desc})`;
+    ws.getCell('A1').font = { bold: true, size: 14 };
+    ws.mergeCells('A2:G2');
+    ws.getCell('A2').value =
+      `${data.facility?.provname || ''}  ·  CCN ${data.providerId}  ·  ${data.startDate} → ${data.endDate}`;
+    ws.getCell('A2').font = { color: { argb: 'FF5A6675' } };
+
+    const s = data.summary.hprd[def.key];
+    const nyS = data.nySummary && data.nySummary.census > 0 ? data.nySummary.hprd[def.key] : null;
+    const nyDelta = Number.isFinite(nyS) && nyS > 0 ? ((s - nyS) / nyS) * 100 : null;
+    const minDelta = Number.isFinite(minVal) && minVal > 0 ? ((s - minVal) / minVal) * 100 : null;
+
+    ws.getCell('A4').value = 'Facility HPRD (full period)';
+    ws.getCell('B4').value = s; ws.getCell('B4').numFmt = NUM2;
+    ws.getCell('A5').value = 'NY state average HPRD (same period)';
+    ws.getCell('B5').value = nyS; ws.getCell('B5').numFmt = NUM2;
+    ws.getCell('C5').value = nyDelta != null ? `${nyDelta >= 0 ? '+' : ''}${nyDelta.toFixed(1)}% vs NY avg` : '';
+    if (minVal) {
+      ws.getCell('A6').value = 'NYS minimum HPRD';
+      ws.getCell('B6').value = minVal; ws.getCell('B6').numFmt = NUM2;
+      ws.getCell('C6').value = minDelta != null ? `${minDelta >= 0 ? '+' : ''}${minDelta.toFixed(1)}% vs NYS min` : '';
+    }
+
+    // Monthly comparison table
+    const headerRow = minVal ? 8 : 8;
+    ws.getCell(`A${headerRow}`).value = 'Month';
+    ws.getCell(`B${headerRow}`).value = 'Facility HPRD';
+    ws.getCell(`C${headerRow}`).value = 'NY avg HPRD';
+    ws.getCell(`D${headerRow}`).value = 'vs NY avg %';
+    if (minVal) {
+      ws.getCell(`E${headerRow}`).value = 'NYS min';
+      ws.getCell(`F${headerRow}`).value = 'vs NYS min %';
+    }
+    styleHeader(ws, headerRow);
+    ws.getColumn('A').width = 12;
+    ws.getColumn('B').width = 15;
+    ws.getColumn('C').width = 15;
+    ws.getColumn('D').width = 14;
+    ws.getColumn('E').width = 12;
+    ws.getColumn('F').width = 15;
+
+    let r = headerRow + 1;
+    for (const m of perMonth) {
+      const fac = m[def.key].fac;
+      const ny  = m[def.key].ny;
+      ws.getCell(`A${r}`).value = m.label;
+      if (Number.isFinite(fac)) { ws.getCell(`B${r}`).value = fac; ws.getCell(`B${r}`).numFmt = NUM2; }
+      if (Number.isFinite(ny))  { ws.getCell(`C${r}`).value = ny;  ws.getCell(`C${r}`).numFmt = NUM2; }
+      if (Number.isFinite(fac) && Number.isFinite(ny) && ny > 0) {
+        ws.getCell(`D${r}`).value = (fac - ny) / ny;
+        ws.getCell(`D${r}`).numFmt = '+0.0%;-0.0%;0.0%';
+      }
+      if (minVal) {
+        ws.getCell(`E${r}`).value = minVal;
+        ws.getCell(`E${r}`).numFmt = NUM2;
+        if (Number.isFinite(fac) && minVal > 0) {
+          ws.getCell(`F${r}`).value = (fac - minVal) / minVal;
+          ws.getCell(`F${r}`).numFmt = '+0.0%;-0.0%;0.0%';
+        }
+      }
+      r += 1;
+    }
+
+    // Embed the chart image below the table
+    const svg = chartByKey[def.key];
+    if (svg) {
+      try {
+        const png = await svgToPngBase64(svg, 2);
+        const imageId = wb.addImage({ base64: png.base64, extension: 'png' });
+        const imgRow = r + 2;
+        ws.addImage(imageId, {
+          tl: { col: 0, row: imgRow - 1 },
+          ext: { width: 720, height: 310 },
+        });
+      } catch (e) {
+        ws.getCell(`A${r + 2}`).value = `(chart image unavailable: ${e.message || e})`;
+      }
+    }
+
+    ws.views = [{ state: 'frozen', ySplit: headerRow }];
+  }
+
+  // ---- Save ----
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${report}.xlsx`;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
+const xlsxBtn = document.getElementById('xlsx');
+if (xlsxBtn) {
+  xlsxBtn.addEventListener('click', async () => {
+    if (!currentReport) return;
+    const prev = xlsxBtn.textContent;
+    xlsxBtn.disabled = true;
+    xlsxBtn.textContent = 'Exporting…';
+    try {
+      await exportExcel();
+    } catch (e) {
+      console.error(e);
+      alert(`Excel export failed: ${e.message || e}`);
+    } finally {
+      xlsxBtn.textContent = prev;
+      xlsxBtn.disabled = false;
+    }
+  });
+}
+
 // ---------- init ----------
 
 loadCoverage();
