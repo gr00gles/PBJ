@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PBJ Daily Nurse Staffing Reports</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <h1>PBJ Daily Nurse Staffing Reports</h1>
+      <p class="tagline">
+        Extended-timeframe staffing reports built from the CMS Payroll-Based Journal
+        <a href="https://data.cms.gov/quality-of-care/payroll-based-journal-daily-nurse-staffing" target="_blank" rel="noopener">Daily Nurse Staffing</a>
+        public data.
+      </p>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="card">
+      <form id="report-form" class="form-grid">
+        <div class="field">
+          <label for="providerId">Facility ID (CCN)</label>
+          <input id="providerId" name="providerId" type="text" inputmode="numeric" pattern="\d{6}"
+                 placeholder="e.g. 015009" required maxlength="6" />
+          <small>6-digit CMS Certification Number</small>
+        </div>
+        <div class="field">
+          <label for="startDate">Start date</label>
+          <input id="startDate" name="startDate" type="date" required />
+        </div>
+        <div class="field">
+          <label for="endDate">End date</label>
+          <input id="endDate" name="endDate" type="date" required />
+        </div>
+        <div class="field actions">
+          <button type="submit" id="run">Generate report</button>
+        </div>
+      </form>
+      <p id="coverage" class="coverage"></p>
+    </section>
+
+    <section id="status" class="status" hidden></section>
+
+    <section id="results" class="results" hidden>
+      <div class="card facility">
+        <div>
+          <div class="label">Facility</div>
+          <div id="f-name" class="big"></div>
+          <div id="f-loc" class="muted"></div>
+          <div id="f-meta" class="muted"></div>
+        </div>
+        <div class="range-info">
+          <div class="label">Reporting period</div>
+          <div id="f-range" class="big"></div>
+          <div id="f-days" class="muted"></div>
+        </div>
+      </div>
+
+      <div class="summary-grid">
+        <div class="metric">
+          <div class="label">Avg daily census</div>
+          <div id="m-census" class="big"></div>
+        </div>
+        <div class="metric">
+          <div class="label">Total nurse hours</div>
+          <div id="m-hours" class="big"></div>
+        </div>
+        <div class="metric">
+          <div class="label">Total HPRD</div>
+          <div id="m-hprd" class="big"></div>
+          <div class="muted">Hours per resident day</div>
+        </div>
+        <div class="metric">
+          <div class="label">RN HPRD</div>
+          <div id="m-rn" class="big"></div>
+        </div>
+        <div class="metric">
+          <div class="label">LPN HPRD</div>
+          <div id="m-lpn" class="big"></div>
+        </div>
+        <div class="metric">
+          <div class="label">CNA HPRD</div>
+          <div id="m-cna" class="big"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="table-header">
+          <h2>Daily detail</h2>
+          <div class="table-actions">
+            <label class="inline">
+              <input type="checkbox" id="split-emp-ctr" /> show emp/contract split
+            </label>
+            <button type="button" id="csv">Download CSV</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table id="daily-table">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="notes" class="notes muted"></div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap muted">
+      Data source: CMS data.cms.gov PBJ Daily Nurse Staffing public use file.
+      Reports are generated from quarterly public datasets; the most recent quarter lags real time.
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
