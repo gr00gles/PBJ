@@ -135,6 +135,104 @@ async function fetchQuarterForProvider(accessURL, providerId) {
   return res.json();
 }
 
+// ---------- NY state benchmark ----------
+
+const NY_PAGE_SIZE = 6500;          // observed CMS cap for state-wide queries
+const NY_CACHE_PREFIX = 'pbj.nys.'; // + quarterKey + '.v1'
+const NY_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+function nyCacheKey(quarterKey) { return `${NY_CACHE_PREFIX}${quarterKey}.v1`; }
+
+function readNyCache(quarterKey) {
+  try {
+    const raw = localStorage.getItem(nyCacheKey(quarterKey));
+    if (!raw) return null;
+    const { fetchedAt, byDate } = JSON.parse(raw);
+    if (Date.now() - fetchedAt > NY_CACHE_TTL_MS) return null;
+    return byDate;
+  } catch { return null; }
+}
+
+function writeNyCache(quarterKey, byDate) {
+  try {
+    localStorage.setItem(nyCacheKey(quarterKey), JSON.stringify({ fetchedAt: Date.now(), byDate }));
+  } catch {}
+}
+
+// Pulls every NY row in a quarter (paginated), accumulating per-day totals.
+// Returns { WorkDate: { census, cna, lpn, rn, lpnAdmin, naTrn, rows } }.
+async function fetchNyQuarterAggregated(accessURL, quarterKey, onProgress) {
+  const cached = readNyCache(quarterKey);
+  if (cached) return cached;
+
+  const byDate = {};
+  let offset = 0;
+  let pageIndex = 0;
+  // Safety cap: state quarters top out around ~60k rows
+  const HARD_CAP = 200000;
+  while (offset < HARD_CAP) {
+    const u = new URL(accessURL);
+    u.searchParams.set('filter[STATE]', 'NY');
+    u.searchParams.set('size', String(NY_PAGE_SIZE));
+    u.searchParams.set('offset', String(offset));
+    const res = await fetch(u.toString(), { headers: { Accept: 'application/json' } });
+    if (!res.ok) throw new Error(`NY HTTP ${res.status} at offset ${offset}`);
+    const rows = await res.json();
+    for (const r of rows) {
+      const d = r.WorkDate;
+      const t = byDate[d] || (byDate[d] = {
+        census: 0, cna: 0, lpn: 0, rn: 0, lpnAdmin: 0, naTrn: 0, rows: 0,
+      });
+      t.census   += num(r.MDScensus);
+      t.cna      += num(r.Hrs_CNA) + num(r.Hrs_MedAide);
+      t.lpn      += num(r.Hrs_LPN);
+      t.rn       += num(r.Hrs_RN) + num(r.Hrs_RNDON) + num(r.Hrs_RNadmin);
+      t.lpnAdmin += num(r.Hrs_LPNadmin);
+      t.naTrn    += num(r.Hrs_NAtrn);
+      t.rows     += 1;
+    }
+    pageIndex += 1;
+    if (onProgress) onProgress(quarterKey, pageIndex, rows.length);
+    if (rows.length < NY_PAGE_SIZE) break;
+    offset += NY_PAGE_SIZE;
+  }
+
+  writeNyCache(quarterKey, byDate);
+  return byDate;
+}
+
+// Given per-day NY totals across quarters, summarize to the selected date range.
+function summarizeNy(byDateMaps, startCompact, endCompact) {
+  let census = 0, cna = 0, lpn = 0, rn = 0, lpnAdmin = 0, naTrn = 0, days = 0, rows = 0;
+  for (const byDate of byDateMaps) {
+    for (const [d, t] of Object.entries(byDate)) {
+      if (d < startCompact || d > endCompact) continue;
+      census   += t.census;
+      cna      += t.cna;
+      lpn      += t.lpn;
+      rn       += t.rn;
+      lpnAdmin += t.lpnAdmin;
+      naTrn    += t.naTrn;
+      rows     += t.rows;
+      days     += 1;
+    }
+  }
+  const lpnRn = lpn + rn;
+  const total = cna + lpnRn;
+  const hprd = (s) => census > 0 ? s / census : 0;
+  return {
+    census, rows, distinctDates: days,
+    hours: { cna, lpn, rn, lpnRn, total, lpnAdmin, naTrn },
+    hprd: {
+      cna:   hprd(cna),
+      lpn:   hprd(lpn),
+      rn:    hprd(rn),
+      lpnRn: hprd(lpnRn),
+      total: hprd(total),
+    },
+  };
+}
+
 // ---------- summary ----------
 
 // Aggregations matching user-requested stats:
@@ -215,7 +313,7 @@ async function loadCoverage() {
 
 // ---------- report generation (client-side) ----------
 
-async function generateReport({ providerId, startDate, endDate }) {
+async function generateReport({ providerId, startDate, endDate, onProgress }) {
   const catalog = await loadCatalog();
   const wanted = quartersInRange(startDate, endDate);
   const available = wanted.filter(q => catalog[q]);
@@ -224,19 +322,43 @@ async function generateReport({ providerId, startDate, endDate }) {
   const startCompact = isoToCompact(startDate);
   const endCompact = isoToCompact(endDate);
 
-  const results = await Promise.allSettled(
+  // Kick off facility fetches and NY benchmark fetches concurrently.
+  onProgress?.(`Fetching staffing data for facility ${providerId}…`);
+  const facilityPromise = Promise.allSettled(
     available.map(q => fetchQuarterForProvider(catalog[q], providerId).then(rows => ({ q, rows })))
   );
+  const nyPromise = Promise.allSettled(
+    available.map(async (q) => {
+      const byDate = await fetchNyQuarterAggregated(catalog[q], q, (qk, page, count) => {
+        onProgress?.(`Loading NY state benchmark ${qk} (page ${page}, ${count} rows)…`);
+      });
+      return { q, byDate };
+    })
+  );
+
+  const [facilityResults, nyResults] = await Promise.all([facilityPromise, nyPromise]);
 
   const errors = [];
   const rowsByQuarter = {};
-  for (let i = 0; i < results.length; i++) {
-    const r = results[i];
+  for (let i = 0; i < facilityResults.length; i++) {
+    const r = facilityResults[i];
     const q = available[i];
     if (r.status === 'rejected') {
       errors.push({ quarter: q, error: String(r.reason && r.reason.message || r.reason) });
     } else {
       rowsByQuarter[q] = r.value.rows;
+    }
+  }
+
+  const nyByDateMaps = [];
+  const nyErrors = [];
+  for (let i = 0; i < nyResults.length; i++) {
+    const r = nyResults[i];
+    const q = available[i];
+    if (r.status === 'rejected') {
+      nyErrors.push({ quarter: q, error: String(r.reason && r.reason.message || r.reason) });
+    } else {
+      nyByDateMaps.push(r.value.byDate);
     }
   }
 
@@ -260,14 +382,18 @@ async function generateReport({ providerId, startDate, endDate }) {
   }
   allRows.sort((a, b) => a.WorkDate.localeCompare(b.WorkDate));
 
+  const nySummary = summarizeNy(nyByDateMaps, startCompact, endCompact);
+
   return {
     providerId, startDate, endDate,
     facility,
     quartersQueried: available,
     quartersMissing: missing,
     errors,
+    nyErrors,
     rowCount: allRows.length,
     summary: summarize(allRows),
+    nySummary,
     rows: allRows,
   };
 }
@@ -301,7 +427,10 @@ form.addEventListener('submit', async (e) => {
   resultsEl.hidden = true;
 
   try {
-    const data = await generateReport({ providerId, startDate, endDate });
+    const data = await generateReport({
+      providerId, startDate, endDate,
+      onProgress: (msg) => setStatus('info', msg),
+    });
     if (data.rowCount === 0) {
       setStatus('error', `No staffing rows found for facility ${providerId} in that range. ` +
                 `Double-check the CCN and make sure the range overlaps available quarters.`);
@@ -341,6 +470,7 @@ function renderReport(data) {
   $('#m-lpnrn').textContent = fmt2.format(s.hprd.lpnRn);
   $('#m-total').textContent = fmt2.format(s.hprd.total);
 
+  renderBenchmark(data);
   renderBreakdown(data);
   renderTable(data);
 
@@ -352,6 +482,44 @@ function renderReport(data) {
     notes.push(`Errors fetching: ${data.errors.map(e => `${e.quarter} (${e.error})`).join('; ')}.`);
   }
   $('#notes').textContent = notes.join(' ');
+}
+
+function renderBenchmark(data) {
+  const ny = data.nySummary;
+  const s = data.summary;
+  const METRICS = [
+    ['cna',   'ny-cna',   'd-cna'],
+    ['lpn',   'ny-lpn',   'd-lpn'],
+    ['rn',    'ny-rn',    'd-rn'],
+    ['lpnRn', 'ny-lpnrn', 'd-lpnrn'],
+    ['total', 'ny-total', 'd-total'],
+  ];
+  const hasNy = ny && ny.census > 0;
+  for (const [k, nyId, dId] of METRICS) {
+    const nyEl = document.getElementById(nyId);
+    const dEl = document.getElementById(dId);
+    if (!hasNy) {
+      nyEl.textContent = '—';
+      dEl.textContent = '';
+      dEl.className = 'delta';
+      continue;
+    }
+    const nyVal = ny.hprd[k];
+    const facVal = s.hprd[k];
+    nyEl.textContent = fmt2.format(nyVal);
+    if (nyVal > 0 && facVal > 0) {
+      const diff = facVal - nyVal;
+      const pct = (diff / nyVal) * 100;
+      const sign = diff >= 0 ? '+' : '−';
+      dEl.textContent = `${sign}${Math.abs(pct).toFixed(1)}%`;
+      if (Math.abs(pct) < 2) dEl.className = 'delta neutral';
+      else if (pct >= 0) dEl.className = 'delta good';
+      else dEl.className = 'delta bad';
+    } else {
+      dEl.textContent = '';
+      dEl.className = 'delta';
+    }
+  }
 }
 
 function renderBreakdown(data) {
@@ -423,6 +591,22 @@ function renderBreakdown(data) {
     </tr>
   `;
   $('#formula-table').innerHTML = formulaRows;
+
+  // ---- NY state benchmark row in the same panel ----
+  const ny = data.nySummary;
+  if (ny && ny.census > 0) {
+    const nyBlock = `
+      <tr class="ny-header"><td colspan="3"><strong>All NYS benchmark over the same period</strong></td></tr>
+      <tr><td>NY rows / distinct days</td><td class="num">${fmt0.format(ny.rows)} / ${fmt0.format(ny.distinctDates)}</td><td class="muted">Sum of per-facility daily rows across all NY facilities.</td></tr>
+      <tr><td><strong>NY total resident-days</strong></td><td class="num"><strong>${fmt0.format(ny.census)}</strong></td><td class="muted">Denominator for NY HPRDs.</td></tr>
+      <tr><td>NY CNA hours</td><td class="num">${fmt0.format(ny.hours.cna)}</td><td class="num">${fmt0.format(ny.hours.cna)} ÷ ${fmt0.format(ny.census)} = <strong>${fmt2.format(ny.hprd.cna)}</strong></td></tr>
+      <tr><td>NY LPN hours</td><td class="num">${fmt0.format(ny.hours.lpn)}</td><td class="num">${fmt0.format(ny.hours.lpn)} ÷ ${fmt0.format(ny.census)} = <strong>${fmt2.format(ny.hprd.lpn)}</strong></td></tr>
+      <tr><td>NY RN hours</td><td class="num">${fmt0.format(ny.hours.rn)}</td><td class="num">${fmt0.format(ny.hours.rn)} ÷ ${fmt0.format(ny.census)} = <strong>${fmt2.format(ny.hprd.rn)}</strong></td></tr>
+      <tr><td>NY LPN + RN hours</td><td class="num">${fmt0.format(ny.hours.lpnRn)}</td><td class="num">${fmt0.format(ny.hours.lpnRn)} ÷ ${fmt0.format(ny.census)} = <strong>${fmt2.format(ny.hprd.lpnRn)}</strong></td></tr>
+      <tr class="formula-total"><td><strong>NY Total hours</strong></td><td class="num">${fmt0.format(ny.hours.total)}</td><td class="num">${fmt0.format(ny.hours.total)} ÷ ${fmt0.format(ny.census)} = <strong>${fmt2.format(ny.hprd.total)}</strong></td></tr>
+    `;
+    $('#formula-table').insertAdjacentHTML('beforeend', nyBlock);
+  }
 }
 
 function renderTable(data) {
