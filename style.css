@@ -29,18 +29,10 @@ html, body {
 }
 
 .site-header {
-  background: linear-gradient(180deg, #ffffff 0%, #eef2f8 100%);
+  background: var(--bg);
   border-bottom: 1px solid var(--border);
-  padding: 28px 0 20px;
-}
-
-.site-header {
-  background: linear-gradient(180deg, #1a0303 0%, #0f0202 100%);
-  border-bottom: 1px solid #3a0a0a;
   padding: 36px 0 64px;
 }
-.site-header .tagline { color: #c9a8a8; }
-.site-header .tagline a { color: #ff7a7a; }
 
 .site-header h1 {
   margin: 0 0 18px;
