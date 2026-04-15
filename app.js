@@ -329,6 +329,9 @@ async function loadCoverage() {
     const effectiveMin = earliestISO > HARD_MIN_DATE ? earliestISO : HARD_MIN_DATE;
     startEl.min = effectiveMin; startEl.max = latestISO;
     endEl.min = effectiveMin; endEl.max = latestISO;
+    const clampToMin = (el) => { if (el.value && el.value < effectiveMin) el.value = effectiveMin; };
+    startEl.addEventListener('change', () => clampToMin(startEl));
+    endEl.addEventListener('change', () => clampToMin(endEl));
     if (!startEl.value) startEl.value = quarterToISO(latest, 'start');
     if (!endEl.value) endEl.value = latestISO;
   } catch (e) {
