@@ -125,7 +125,7 @@ main { padding: 24px 0 40px; }
   align-items: end;
 }
 
-.field { display: flex; flex-direction: column; }
+.field { display: flex; flex-direction: column; position: relative; }
 .field label {
   font-size: 12px;
   font-weight: 600;
@@ -149,6 +149,36 @@ input:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(31, 95, 174, 0.12);
+}
+
+@keyframes date-flash {
+  0%   { border-color: var(--border);  box-shadow: none; }
+  20%  { border-color: #e8a000; box-shadow: 0 0 0 3px rgba(232, 160, 0, 0.22); }
+  60%  { border-color: #e8a000; box-shadow: 0 0 0 3px rgba(232, 160, 0, 0.22); }
+  100% { border-color: var(--border);  box-shadow: none; }
+}
+input.date-flash { animation: date-flash 1.8s ease; }
+
+.date-hint {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  background: #fff8e6;
+  color: #7a4f00;
+  border: 1px solid #f0c448;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+  z-index: 10;
+  pointer-events: none;
+  animation: date-hint-fade 2.8s ease forwards;
+}
+@keyframes date-hint-fade {
+  0%   { opacity: 0; transform: translateY(-3px); }
+  10%  { opacity: 1; transform: translateY(0); }
+  70%  { opacity: 1; }
+  100% { opacity: 0; }
 }
 
 button {

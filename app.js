@@ -329,7 +329,25 @@ async function loadCoverage() {
     const effectiveMin = earliestISO > HARD_MIN_DATE ? earliestISO : HARD_MIN_DATE;
     startEl.min = effectiveMin; startEl.max = latestISO;
     endEl.min = effectiveMin; endEl.max = latestISO;
-    const clampToMin = (el) => { if (el.value && el.value < effectiveMin) el.value = effectiveMin; };
+    const clampToMin = (el) => {
+      if (!el.value || el.value >= effectiveMin) return;
+      el.value = effectiveMin;
+      // Flash the input border
+      el.classList.remove('date-flash');
+      void el.offsetWidth; // force reflow to restart animation
+      el.classList.add('date-flash');
+      el.addEventListener('animationend', () => el.classList.remove('date-flash'), { once: true });
+      // Show hint popup below the field
+      const field = el.closest('.field');
+      if (field) {
+        field.querySelector('.date-hint')?.remove();
+        const hint = document.createElement('div');
+        hint.className = 'date-hint';
+        hint.textContent = 'Date adjusted to July 1, 2017';
+        field.appendChild(hint);
+        hint.addEventListener('animationend', () => hint.remove(), { once: true });
+      }
+    };
     startEl.addEventListener('change', () => clampToMin(startEl));
     endEl.addEventListener('change', () => clampToMin(endEl));
     if (!startEl.value) startEl.value = quarterToISO(latest, 'start');
