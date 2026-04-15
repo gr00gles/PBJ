@@ -17,6 +17,7 @@ const CATALOG_URL = 'https://data.cms.gov/data.json';
 const DATASET_TITLE = 'Payroll Based Journal Daily Nurse Staffing';
 const CATALOG_CACHE_KEY = 'pbj.catalog.v1';
 const CATALOG_TTL_MS = 60 * 60 * 1000; // 1 hour
+const HARD_MIN_DATE = '2017-07-01'; // earliest date users are allowed to query
 
 // NYS minimum staffing requirements (10 NYCRR 415.13 — 2022 nursing home staffing law).
 // Editable in the UI and persisted in localStorage so the user can update if NYS changes them.
@@ -325,8 +326,9 @@ async function loadCoverage() {
     const endEl = $('#endDate');
     const earliestISO = quarterToISO(earliest, 'start');
     const latestISO = quarterToISO(latest, 'end');
-    startEl.min = earliestISO; startEl.max = latestISO;
-    endEl.min = earliestISO; endEl.max = latestISO;
+    const effectiveMin = earliestISO > HARD_MIN_DATE ? earliestISO : HARD_MIN_DATE;
+    startEl.min = effectiveMin; startEl.max = latestISO;
+    endEl.min = effectiveMin; endEl.max = latestISO;
     if (!startEl.value) startEl.value = quarterToISO(latest, 'start');
     if (!endEl.value) endEl.value = latestISO;
   } catch (e) {
