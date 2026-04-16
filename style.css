@@ -281,7 +281,7 @@ button.ghost {
 button.ghost:hover { background: #f2f4f8; color: var(--text); }
 
 @media (max-width: 780px) {
-  .minimums-compact-grid { grid-template-columns: 1fr; gap: 8px; }
+  .minimums-compact-grid { gap: 6px; }
 }
 
 .status {
