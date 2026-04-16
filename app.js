@@ -273,6 +273,22 @@ function summarizeNy(byDateMaps, startCompact, endCompact) {
   };
 }
 
+function summarizeNyFromFlat(nyByDate, startCompact, endCompact) {
+  let census = 0, cna = 0, lpn = 0, rn = 0, lpnAdmin = 0, naTrn = 0, days = 0, rows = 0;
+  for (const [d, t] of Object.entries(nyByDate)) {
+    if (d < startCompact || d > endCompact) continue;
+    census += t.census; cna += t.cna; lpn += t.lpn; rn += t.rn;
+    lpnAdmin += t.lpnAdmin; naTrn += t.naTrn; rows += t.rows; days += 1;
+  }
+  const lpnRn = lpn + rn, total = cna + lpnRn;
+  const hprd = (s) => census > 0 ? s / census : 0;
+  return {
+    census, rows, distinctDates: days,
+    hours: { cna, lpn, rn, lpnRn, total, lpnAdmin, naTrn },
+    hprd: { cna: hprd(cna), lpn: hprd(lpn), rn: hprd(rn), lpnRn: hprd(lpnRn), total: hprd(total) },
+  };
+}
+
 // ---------- summary ----------
 
 // Aggregations matching user-requested stats:
@@ -568,6 +584,7 @@ function renderReport(data) {
     notes.push(`Errors fetching: ${data.errors.map(e => `${e.quarter} (${e.error})`).join('; ')}.`);
   }
   $('#notes').textContent = notes.join(' ');
+  initRangeSlider(data);
 }
 
 function renderBenchmark(data) {
@@ -1089,6 +1106,7 @@ function initMinimumInputs() {
   }
 }
 initMinimumInputs();
+initRangeSliderEvents();
 
 // ---------- CSV export ----------
 
@@ -1608,6 +1626,103 @@ function initNameSearch() {
       });
     });
   }
+}
+
+// ---------- range slider ----------
+
+let sliderDates = [];
+let sliderDebounce = null;
+
+function initRangeSlider(data) {
+  const sliderEl = document.getElementById('range-slider');
+  if (!sliderEl) return;
+  const dates = [...new Set(data.rows.map(r => r.WorkDate))].sort();
+  sliderDates = dates;
+  if (dates.length < 2) { sliderEl.hidden = true; return; }
+  const startEl = document.getElementById('range-start');
+  const endEl   = document.getElementById('range-end');
+  startEl.min = endEl.min = 0;
+  startEl.max = endEl.max = dates.length - 1;
+  startEl.value = 0;
+  endEl.value   = dates.length - 1;
+  updateSliderUI();
+  sliderEl.hidden = false;
+}
+
+function updateSliderUI() {
+  const total   = sliderDates.length - 1;
+  const s       = parseInt(document.getElementById('range-start').value);
+  const e       = parseInt(document.getElementById('range-end').value);
+  const fill    = document.getElementById('range-fill');
+  fill.style.left  = `${(s / total) * 100}%`;
+  fill.style.width = `${((e - s) / total) * 100}%`;
+  const fmt = (compact) => new Date(workDateToISO(compact) + 'T12:00:00')
+    .toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  document.getElementById('slider-date-start').textContent = fmt(sliderDates[s]);
+  document.getElementById('slider-date-end').textContent   = fmt(sliderDates[e]);
+  document.getElementById('slider-range-display').textContent =
+    `${fmt(sliderDates[s])} \u2013 ${fmt(sliderDates[e])}`;
+}
+
+function applySliderRange() {
+  if (!currentReport || !sliderDates.length) return;
+  const s = parseInt(document.getElementById('range-start').value);
+  const e = parseInt(document.getElementById('range-end').value);
+  const startCompact = sliderDates[s];
+  const endCompact   = sliderDates[e];
+  const rows = currentReport.rows.filter(r => r.WorkDate >= startCompact && r.WorkDate <= endCompact);
+  const sliced = {
+    ...currentReport,
+    startDate: workDateToISO(startCompact),
+    endDate:   workDateToISO(endCompact),
+    rowCount:  rows.length,
+    summary:   summarize(rows),
+    nySummary: summarizeNyFromFlat(currentReport.nyByDate, startCompact, endCompact),
+    rows,
+  };
+  renderSlicedReport(sliced);
+}
+
+function renderSlicedReport(data) {
+  const s = data.summary;
+  $('#f-range').textContent = `${data.startDate} \u2192 ${data.endDate}`;
+  $('#f-days').textContent =
+    `${data.rowCount} days \u00b7 avg census ${fmt1.format(s.avgDailyCensus)} \u00b7 ` +
+    `${fmt0.format(s.hours.total)} total nurse hours`;
+  $('#m-cna').textContent   = fmt2.format(s.hprd.cna);
+  $('#m-lpn').textContent   = fmt2.format(s.hprd.lpn);
+  $('#m-rn').textContent    = fmt2.format(s.hprd.rn);
+  $('#m-lpnrn').textContent = fmt2.format(s.hprd.lpnRn);
+  $('#m-total').textContent = fmt2.format(s.hprd.total);
+  renderBenchmark(data);
+  renderMinimumsLine(data);
+  renderCharts(data);
+  renderBreakdown(data);
+  renderTable(data);
+}
+
+function initRangeSliderEvents() {
+  const startEl = document.getElementById('range-start');
+  const endEl   = document.getElementById('range-end');
+  const resetBtn = document.getElementById('slider-reset');
+  startEl.addEventListener('input', () => {
+    if (parseInt(startEl.value) > parseInt(endEl.value)) startEl.value = endEl.value;
+    updateSliderUI();
+    clearTimeout(sliderDebounce);
+    sliderDebounce = setTimeout(applySliderRange, 40);
+  });
+  endEl.addEventListener('input', () => {
+    if (parseInt(endEl.value) < parseInt(startEl.value)) endEl.value = startEl.value;
+    updateSliderUI();
+    clearTimeout(sliderDebounce);
+    sliderDebounce = setTimeout(applySliderRange, 40);
+  });
+  resetBtn.addEventListener('click', () => {
+    startEl.value = 0;
+    endEl.value   = sliderDates.length - 1;
+    updateSliderUI();
+    applySliderRange();
+  });
 }
 
 // ---------- init ----------

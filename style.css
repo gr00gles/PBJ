@@ -637,3 +637,43 @@ tfoot td {
   .big { font-size: 17px; }
   .metric .big { font-size: 20px; }
 }
+
+.range-slider-card { padding: 16px 20px 14px; margin-bottom: 20px; }
+.range-slider-header {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 14px;
+}
+.range-display { font-size: 14px; font-weight: 600; color: var(--text); flex: 1; }
+.dual-range-wrap {
+  position: relative; height: 36px; display: flex; align-items: center;
+}
+.range-track {
+  position: absolute; left: 0; right: 0; height: 4px;
+  background: var(--border); border-radius: 2px;
+  top: 50%; transform: translateY(-50%); pointer-events: none;
+}
+.range-fill {
+  position: absolute; height: 100%;
+  background: var(--accent); border-radius: 2px;
+}
+.range-thumb {
+  position: absolute; width: 100%;
+  -webkit-appearance: none; appearance: none;
+  background: transparent; pointer-events: none;
+  margin: 0; height: 36px; top: 0; outline: none;
+}
+.range-thumb::-webkit-slider-thumb {
+  -webkit-appearance: none; pointer-events: all;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: var(--accent); border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(20,30,50,0.2); cursor: grab;
+}
+.range-thumb:active::-webkit-slider-thumb { cursor: grabbing; }
+.range-thumb::-moz-range-thumb {
+  pointer-events: all; width: 18px; height: 18px; border-radius: 50%;
+  background: var(--accent); border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(20,30,50,0.2); cursor: grab; border: 2px solid #fff;
+}
+.range-ticks {
+  display: flex; justify-content: space-between; margin-top: 6px;
+}
+.range-tick-label { font-size: 12px; color: var(--muted); }

@@ -93,6 +93,23 @@
         </div>
       </div>
 
+      <div id="range-slider" class="card range-slider-card" hidden>
+        <div class="range-slider-header">
+          <span class="label">Adjust time period</span>
+          <span id="slider-range-display" class="range-display"></span>
+          <button type="button" id="slider-reset" class="ghost">Full range</button>
+        </div>
+        <div class="dual-range-wrap">
+          <div class="range-track"><div id="range-fill" class="range-fill"></div></div>
+          <input type="range" id="range-start" class="range-thumb" min="0" max="100" value="0" step="1" />
+          <input type="range" id="range-end"   class="range-thumb" min="0" max="100" value="100" step="1" />
+        </div>
+        <div class="range-ticks">
+          <span id="slider-date-start" class="range-tick-label"></span>
+          <span id="slider-date-end"   class="range-tick-label"></span>
+        </div>
+      </div>
+
       <div class="summary-grid">
         <div class="metric">
           <div class="label">CNA HPRD</div>
