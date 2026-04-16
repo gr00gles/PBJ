@@ -861,10 +861,10 @@ function renderMinimumsLine(data) {
     const diff = facVal - minVal;
     const pct = minVal > 0 ? (diff / minVal) * 100 : 0;
     if (facVal >= minVal) {
-      dEl.textContent = `✓ +${Math.abs(pct).toFixed(1)}%`;
+      dEl.textContent = `+${Math.abs(pct).toFixed(1)}%`;
       dEl.className = 'delta good';
     } else {
-      dEl.textContent = `✗ −${Math.abs(pct).toFixed(1)}%`;
+      dEl.textContent = `−${Math.abs(pct).toFixed(1)}%`;
       dEl.className = 'delta bad';
     }
   }
