@@ -1478,17 +1478,23 @@ function initNameSearch() {
       return;
     }
     try {
-      const safe = term.replace(/'/g, "''").toUpperCase();
       const url = new URL(latestQuarterURL);
-      url.searchParams.set('$where', `PROVNAME like '%${safe}%'`);
+      url.searchParams.set('$q', term);
+      url.searchParams.set('$where', "STATE='NY'");
       url.searchParams.set('$select', 'PROVNUM,PROVNAME,CITY,STATE');
-      url.searchParams.set('$limit', '100');
+      url.searchParams.set('$limit', '200');
       const res = await fetch(url.toString(), { headers: { Accept: 'application/json' } });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const rows = await res.json();
+      const termLower = term.toLowerCase();
       const seen = new Set();
-      const unique = rows.filter(r => r.PROVNUM && !seen.has(r.PROVNUM) && seen.add(r.PROVNUM));
-      if (!unique.length) { results.innerHTML = '<li class="search-msg">No facilities found.</li>'; return; }
+      const unique = rows.filter(r => {
+        if (!r.PROVNUM || seen.has(r.PROVNUM)) return false;
+        if (!r.PROVNAME || !r.PROVNAME.toLowerCase().includes(termLower)) return false;
+        seen.add(r.PROVNUM);
+        return true;
+      });
+      if (!unique.length) { results.innerHTML = '<li class="search-msg">No NY facilities found.</li>'; return; }
       results.innerHTML = unique.map(r =>
         `<li data-ccn="${r.PROVNUM}">
           <div class="result-name">${r.PROVNAME}</div>
