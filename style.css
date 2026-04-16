@@ -476,7 +476,8 @@ button.ghost:hover { background: #f2f4f8; color: var(--text); }
   .charts-grid { grid-template-columns: 1fr; }
 }
 
-.breakdown summary {
+.breakdown summary,
+.daily-section summary {
   cursor: pointer;
   display: flex;
   justify-content: space-between;
@@ -485,8 +486,12 @@ button.ghost:hover { background: #f2f4f8; color: var(--text); }
   font-size: 16px;
   list-style: none;
 }
-.breakdown summary::-webkit-details-marker { display: none; }
-.breakdown[open] summary { margin-bottom: 16px; }
+.breakdown summary::-webkit-details-marker,
+.daily-section summary::-webkit-details-marker { display: none; }
+.breakdown[open] summary,
+.daily-section[open] summary { margin-bottom: 16px; }
+.toggle-hint::before { content: 'click to expand'; }
+details[open] .toggle-hint::before { content: 'click to collapse'; }
 .breakdown h3 {
   font-size: 12px;
   font-weight: 700;
@@ -566,10 +571,13 @@ button.ghost:hover { background: #f2f4f8; color: var(--text); }
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-bottom: 12px;
 }
 .table-header h2 { margin: 0; font-size: 16px; }
-.table-actions { display: flex; align-items: center; gap: 14px; }
+.table-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.daily-section .table-header { justify-content: flex-end; }
 .table-actions button {
   background: #fff;
   color: var(--accent);
@@ -625,4 +633,15 @@ tfoot td {
   .form-grid .actions { grid-column: 1 / -1; }
   .facility { grid-template-columns: 1fr; }
   .range-info { text-align: left; }
+}
+
+@media (max-width: 480px) {
+  .site-header { padding: 20px 0 54px; }
+  .site-header h1 { font-size: 36px; }
+  .wrap { padding: 0 12px; }
+  .card { padding: 14px; }
+  .form-grid { grid-template-columns: 1fr; }
+  .form-grid .actions { grid-column: unset; }
+  .big { font-size: 17px; }
+  .metric .big { font-size: 20px; }
 }

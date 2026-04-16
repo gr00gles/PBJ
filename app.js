@@ -503,6 +503,7 @@ form.addEventListener('submit', async (e) => {
 function renderReport(data) {
   resultsEl.hidden = false;
   document.querySelector('.breakdown').removeAttribute('open');
+  document.querySelector('.daily-section').removeAttribute('open');
 
   const s = data.summary;
   const f = data.facility || {};
