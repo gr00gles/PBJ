@@ -11,11 +11,6 @@
   <header class="site-header">
     <div class="wrap">
       <h1 class="site-title">PBJ Analyzer</h1>
-      <p class="tagline">
-        Extended-timeframe staffing reports built from the CMS Payroll-Based Journal
-        <a href="https://data.cms.gov/quality-of-care/payroll-based-journal-daily-nurse-staffing" target="_blank" rel="noopener">Daily Nurse Staffing</a>
-        public data.
-      </p>
     </div>
   </header>
 
@@ -48,35 +43,35 @@
         </div>
       </form>
       <p id="coverage" class="coverage"></p>
-    </section>
 
-    <section class="card minimums">
-      <div class="minimums-header">
-        <div>
-          <div class="minimums-title" id="minimums-title">Minimum Staffing Requirements</div>
-          <div class="muted" id="minimums-statute">Generate a report to load state-specific minimums.</div>
+      <div class="minimums-compact">
+        <div class="minimums-compact-header">
+          <div>
+            <span class="minimums-compact-title" id="minimums-title">Minimum Staffing Requirements</span>
+            <span class="minimums-statute" id="minimums-statute"> — Generate a report to load state-specific minimums.</span>
+          </div>
+          <button type="button" id="min-reset" class="ghost">Reset</button>
         </div>
-        <button type="button" id="min-reset" class="ghost">Reset to defaults</button>
-      </div>
-      <div class="minimums-grid">
-        <label class="min-tile">
-          <span class="min-label">CNA</span>
-          <input type="number" id="min-cna" step="0.01" min="0" value="2.20" />
-          <span class="min-unit">HPRD minimum</span>
-          <span class="min-desc">CNA + Med Aide hours per resident day</span>
-        </label>
-        <label class="min-tile">
-          <span class="min-label">LPN + RN</span>
-          <input type="number" id="min-lpnrn" step="0.01" min="0" value="1.10" />
-          <span class="min-unit">HPRD minimum</span>
-          <span class="min-desc">Licensed nurse hours per resident day</span>
-        </label>
-        <label class="min-tile">
-          <span class="min-label">Total</span>
-          <input type="number" id="min-total" step="0.01" min="0" value="3.50" />
-          <span class="min-unit">HPRD minimum</span>
-          <span class="min-desc">All nurse staffing hours per resident day</span>
-        </label>
+        <div class="minimums-compact-grid">
+          <label class="min-tile">
+            <span class="min-label">CNA</span>
+            <input type="number" id="min-cna" step="0.01" min="0" value="2.20" />
+            <span class="min-unit">HPRD min</span>
+            <span class="min-desc">CNA + Med Aide</span>
+          </label>
+          <label class="min-tile">
+            <span class="min-label">LPN + RN</span>
+            <input type="number" id="min-lpnrn" step="0.01" min="0" value="1.10" />
+            <span class="min-unit">HPRD min</span>
+            <span class="min-desc">Licensed nurses</span>
+          </label>
+          <label class="min-tile">
+            <span class="min-label">Total</span>
+            <input type="number" id="min-total" step="0.01" min="0" value="3.50" />
+            <span class="min-unit">HPRD min</span>
+            <span class="min-desc">All nurse staffing</span>
+          </label>
+        </div>
       </div>
     </section>
 
@@ -184,8 +179,9 @@
 
   <footer class="site-footer">
     <div class="wrap muted">
-      Data source: CMS data.cms.gov PBJ Daily Nurse Staffing public use file.
-      Reports are generated from quarterly public datasets; the most recent quarter lags real time.
+      Extended-timeframe staffing reports built from the CMS Payroll-Based Journal
+      <a href="https://data.cms.gov/quality-of-care/payroll-based-journal-daily-nurse-staffing" target="_blank" rel="noopener">Daily Nurse Staffing</a>
+      public data. Reports are generated from quarterly public datasets; the most recent quarter lags real time.
     </div>
   </footer>
 
