@@ -20,6 +20,7 @@ const CATALOG_TTL_MS = 60 * 60 * 1000; // 1 hour
 const HARD_MIN_DATE = '2017-07-01'; // earliest date users are allowed to query
 
 let latestQuarterURL = null;
+let latestQuarterKey = null;
 
 // State & federal minimum staffing requirements — editable per-state in the UI.
 const STATE_NAMES = {
@@ -342,6 +343,7 @@ async function loadCoverage() {
     const earliestISO = quarterToISO(earliest, 'start');
     const latestISO = quarterToISO(latest, 'end');
     latestQuarterURL = quarters[latest];
+    latestQuarterKey = latest;
     getFacilityIndex(); // start building search index in background
     const effectiveMin = earliestISO > HARD_MIN_DATE ? earliestISO : HARD_MIN_DATE;
     startEl.min = effectiveMin; startEl.max = latestISO;
@@ -1490,14 +1492,15 @@ if (xlsxBtn) {
 }
 
 // ---------- facility index for name search ----------
-// Uses Socrata $select+$group to get one row per unique facility, cached 7 days.
+// Fetches one day's worth of data (one row per facility) using filter[WorkDate],
+// which is the only reliable filter on the CMS API. ~2-3 pages covers all ~15k facilities.
 
 let facilityIndexPromise = null;
 
 function getFacilityIndex() {
   if (facilityIndexPromise) return facilityIndexPromise;
   facilityIndexPromise = (async () => {
-    const cacheKey = 'pbj.facilityIndex.v2';
+    const cacheKey = 'pbj.facilityIndex.v3';
     const ttl = 7 * 24 * 60 * 60 * 1000;
     try {
       const raw = localStorage.getItem(cacheKey);
@@ -1506,16 +1509,33 @@ function getFacilityIndex() {
         if (Date.now() - ts < ttl && list && list.length > 100) return list;
       }
     } catch {}
-    if (!latestQuarterURL) return null;
+    if (!latestQuarterURL || !latestQuarterKey) return null;
     try {
-      const url = new URL(latestQuarterURL);
-      url.searchParams.set('$select', 'PROVNUM,PROVNAME,CITY,STATE');
-      url.searchParams.set('$group', 'PROVNUM,PROVNAME,CITY,STATE');
-      url.searchParams.set('$limit', '20000');
-      const res = await fetch(url.toString(), { headers: { Accept: 'application/json' } });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const rows = await res.json();
-      const list = rows.filter(r => r.PROVNUM && r.PROVNAME);
+      // Pick the 15th of the first month of the latest quarter — enough time for most
+      // facilities to have submitted data, but still early in the quarter.
+      const qStart = quarterToISO(latestQuarterKey, 'start'); // e.g. "2024-07-01"
+      const workDate = qStart.slice(0, 8) + '15';             // e.g. "2024-07-15"
+      const workDateCompact = isoToCompact(workDate);          // "20240715"
+
+      const facilityMap = {};
+      let offset = 0;
+      while (true) {
+        const url = new URL(latestQuarterURL);
+        url.searchParams.set('filter[WorkDate]', workDateCompact);
+        url.searchParams.set('size', String(STATE_PAGE_SIZE));
+        url.searchParams.set('offset', String(offset));
+        const res = await fetch(url.toString(), { headers: { Accept: 'application/json' } });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const rows = await res.json();
+        for (const r of rows) {
+          if (r.PROVNUM && r.PROVNAME && !facilityMap[r.PROVNUM]) {
+            facilityMap[r.PROVNUM] = { PROVNUM: r.PROVNUM, PROVNAME: r.PROVNAME, CITY: r.CITY || '', STATE: r.STATE || '' };
+          }
+        }
+        if (rows.length < STATE_PAGE_SIZE) break;
+        offset += STATE_PAGE_SIZE;
+      }
+      const list = Object.values(facilityMap);
       if (list.length > 100) {
         try { localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), list })); } catch {}
         return list;
