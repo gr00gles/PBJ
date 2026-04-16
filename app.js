@@ -19,6 +19,8 @@ const CATALOG_CACHE_KEY = 'pbj.catalog.v1';
 const CATALOG_TTL_MS = 60 * 60 * 1000; // 1 hour
 const HARD_MIN_DATE = '2017-07-01'; // earliest date users are allowed to query
 
+let latestQuarterURL = null;
+
 // NYS minimum staffing requirements (10 NYCRR 415.13 — 2022 nursing home staffing law).
 // Editable in the UI and persisted in localStorage so the user can update if NYS changes them.
 const MIN_CACHE_KEY = 'pbj.nysMinimums.v1';
@@ -326,6 +328,7 @@ async function loadCoverage() {
     const endEl = $('#endDate');
     const earliestISO = quarterToISO(earliest, 'start');
     const latestISO = quarterToISO(latest, 'end');
+    latestQuarterURL = quarters[latest];
     const effectiveMin = earliestISO > HARD_MIN_DATE ? earliestISO : HARD_MIN_DATE;
     startEl.min = effectiveMin; startEl.max = latestISO;
     endEl.min = effectiveMin; endEl.max = latestISO;
@@ -1441,6 +1444,73 @@ if (xlsxBtn) {
   });
 }
 
+// ---------- name search ----------
+
+function initNameSearch() {
+  const toggle = document.getElementById('name-search-toggle');
+  const box = document.getElementById('name-search-box');
+  const input = document.getElementById('name-search-input');
+  const results = document.getElementById('name-search-results');
+  const ccnInput = document.getElementById('providerId');
+  let debounce = null;
+
+  toggle.addEventListener('click', () => {
+    box.hidden = !box.hidden;
+    toggle.textContent = box.hidden ? 'search by name' : 'hide search';
+    if (!box.hidden) { results.innerHTML = ''; input.value = ''; input.focus(); }
+  });
+
+  input.addEventListener('input', () => {
+    clearTimeout(debounce);
+    const term = input.value.trim();
+    if (term.length < 2) { results.innerHTML = ''; return; }
+    results.innerHTML = '<li class="search-msg">Searching…</li>';
+    debounce = setTimeout(() => doSearch(term), 350);
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!box.contains(e.target) && e.target !== toggle) results.innerHTML = '';
+  });
+
+  async function doSearch(term) {
+    if (!latestQuarterURL) {
+      results.innerHTML = '<li class="search-msg">Still loading catalog — try again in a moment.</li>';
+      return;
+    }
+    try {
+      const safe = term.replace(/'/g, "''").toUpperCase();
+      const url = new URL(latestQuarterURL);
+      url.searchParams.set('$where', `PROVNAME like '%${safe}%'`);
+      url.searchParams.set('$select', 'PROVNUM,PROVNAME,CITY,STATE');
+      url.searchParams.set('$limit', '100');
+      const res = await fetch(url.toString(), { headers: { Accept: 'application/json' } });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const rows = await res.json();
+      const seen = new Set();
+      const unique = rows.filter(r => r.PROVNUM && !seen.has(r.PROVNUM) && seen.add(r.PROVNUM));
+      if (!unique.length) { results.innerHTML = '<li class="search-msg">No facilities found.</li>'; return; }
+      results.innerHTML = unique.map(r =>
+        `<li data-ccn="${r.PROVNUM}">
+          <div class="result-name">${r.PROVNAME}</div>
+          <div class="result-meta">${r.CITY}, ${r.STATE} · CCN ${r.PROVNUM}</div>
+        </li>`
+      ).join('');
+      results.querySelectorAll('li[data-ccn]').forEach(li => {
+        li.addEventListener('click', () => {
+          ccnInput.value = li.dataset.ccn;
+          results.innerHTML = '';
+          box.hidden = true;
+          toggle.textContent = 'search by name';
+          input.value = '';
+        });
+      });
+    } catch (e) {
+      results.innerHTML = `<li class="search-msg">Search error: ${e.message}</li>`;
+    }
+  }
+}
+
 // ---------- init ----------
 
 loadCoverage();
+initNameSearch();

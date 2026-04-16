@@ -31,72 +31,15 @@ html, body {
 .site-header {
   background: var(--bg);
   border-bottom: 1px solid var(--border);
-  padding: 36px 0 64px;
+  padding: 28px 0 22px;
 }
 
-.site-header h1 {
-  margin: 0 0 18px;
-  font-family: "Nosifer", "Chiller", "Impact", system-ui, sans-serif;
-  font-size: 56px;
-  font-weight: 400;
-  letter-spacing: 0.02em;
-  color: #8b0000;
-  text-shadow:
-    0 0 4px rgba(255, 0, 0, 0.35),
-    0 0 16px rgba(139, 0, 0, 0.55),
-    2px 2px 0 #2a0000,
-    -1px -1px 0 #4d0000;
-  position: relative;
-  display: inline-block;
-  line-height: 1;
-}
-.bleeding-text { position: relative; z-index: 2; }
-
-.blood-drips {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 100%;
-  height: 80px;
-  pointer-events: none;
-  z-index: 1;
-}
-.blood-drips .drip {
-  position: absolute;
-  top: -6px;
-  width: 6px;
-  height: 0;
-  background: linear-gradient(to bottom, #4d0000 0%, #8b0000 35%, #b30000 80%, #d10808 100%);
-  border-radius: 0 0 3px 3px;
-  box-shadow: 0 0 6px rgba(139, 0, 0, 0.6);
-  animation: drip-grow var(--d, 5s) ease-in var(--t, 0s) infinite;
-}
-.blood-drips .drip::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  bottom: -7px;
-  width: 12px;
-  height: 14px;
-  transform: translateX(-50%);
-  background: radial-gradient(ellipse at 50% 30%, #d10808 0%, #8b0000 55%, #4d0000 100%);
-  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
-  box-shadow: 0 2px 6px rgba(139, 0, 0, 0.7);
-  opacity: 0;
-  animation: drop-bulb var(--d, 5s) ease-in var(--t, 0s) infinite;
-}
-@keyframes drip-grow {
-  0%   { height: 0; }
-  60%  { height: calc(var(--h, 40px) * 0.95); }
-  78%  { height: var(--h, 40px); }
-  82%  { height: var(--h, 40px); opacity: 1; }
-  100% { height: 0; opacity: 0; }
-}
-@keyframes drop-bulb {
-  0%, 35%   { opacity: 0; transform: translate(-50%, 0) scale(0.6); }
-  60%       { opacity: 1; transform: translate(-50%, 0) scale(1); }
-  78%       { opacity: 1; transform: translate(-50%, 0) scale(1.05); }
-  100%      { opacity: 0; transform: translate(-50%, 30px) scale(0.85); }
+.site-title {
+  margin: 0 0 10px;
+  font-size: 30px;
+  font-weight: 800;
+  color: var(--accent);
+  letter-spacing: -0.02em;
 }
 
 .tagline {
@@ -134,7 +77,51 @@ main { padding: 24px 0 40px; }
   color: var(--muted);
   margin-bottom: 6px;
 }
-.field small { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.field small { color: var(--muted); font-size: 12px; }
+.field-hint { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
+.ghost-link {
+  background: none; border: none; padding: 0;
+  color: var(--accent); font-size: 12px; font-weight: 500;
+  cursor: pointer; font: inherit; font-size: 12px;
+}
+.ghost-link:hover { text-decoration: underline; }
+
+#name-search-box { position: relative; margin-top: 6px; }
+#name-search-box input[type="search"] {
+  width: 100%;
+  appearance: none;
+  font: inherit;
+  padding: 8px 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+}
+#name-search-box input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(31, 95, 174, 0.12);
+}
+.search-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0; right: 0;
+  z-index: 30;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(20, 30, 50, 0.12);
+  list-style: none;
+  margin: 0; padding: 4px 0;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.search-dropdown:empty { display: none; }
+.search-dropdown li { padding: 8px 12px; cursor: pointer; }
+.search-dropdown li:hover { background: #f2f7fd; }
+.search-dropdown .result-name { font-size: 13px; font-weight: 600; }
+.search-dropdown .result-meta { font-size: 11px; color: var(--muted); margin-top: 1px; }
+.search-msg { padding: 10px 12px; font-size: 13px; color: var(--muted); cursor: default; }
 
 input[type="text"], input[type="date"] {
   appearance: none;
@@ -636,8 +623,7 @@ tfoot td {
 }
 
 @media (max-width: 480px) {
-  .site-header { padding: 20px 0 54px; }
-  .site-header h1 { font-size: 36px; }
+  .site-title { font-size: 24px; }
   .wrap { padding: 0 12px; }
   .card { padding: 14px; }
   .form-grid { grid-template-columns: 1fr; }
