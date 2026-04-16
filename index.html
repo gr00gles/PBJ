@@ -44,14 +44,12 @@
       </form>
       <p id="coverage" class="coverage"></p>
 
-      <div class="minimums-compact">
-        <div class="minimums-compact-header">
-          <div>
-            <span class="minimums-compact-title" id="minimums-title">Minimum Staffing Requirements</span>
-            <span class="minimums-statute" id="minimums-statute"> — Generate a report to load state-specific minimums.</span>
-          </div>
-          <button type="button" id="min-reset" class="ghost">Reset</button>
-        </div>
+      <details class="minimums-compact" id="minimums-details">
+        <summary class="minimums-summary">
+          <span class="minimums-compact-title" id="minimums-title">Minimum Staffing Requirements</span>
+          <span class="minimums-statute" id="minimums-statute">Generate a report to load state-specific minimums.</span>
+          <button type="button" id="min-reset" class="ghost minimums-reset">Reset</button>
+        </summary>
         <div class="minimums-compact-grid">
           <label class="min-tile">
             <span class="min-label">CNA</span>
@@ -72,7 +70,7 @@
             <span class="min-desc">All nurse staffing</span>
           </label>
         </div>
-      </div>
+      </details>
     </section>
 
     <section id="status" class="status" hidden></section>

@@ -1035,8 +1035,8 @@ function updateMinimumsForState(state) {
   const stateName = STATE_NAMES[state] || state || 'Federal';
   const titleEl = document.getElementById('minimums-title');
   const statuteEl = document.getElementById('minimums-statute');
-  if (titleEl) titleEl.textContent = `${stateName} Minimum Staffing Requirements`;
-  if (statuteEl) statuteEl.textContent = `Statute: ${d.statute} · Click any value to edit if requirements change.`;
+  if (titleEl) titleEl.textContent = `${stateName} Staffing Minimums`;
+  if (statuteEl) statuteEl.textContent = `— ${d.statute}`;
   const fmtInput = (v) => (Number.isFinite(v) && v > 0 ? v : 0).toFixed(2);
   document.getElementById('min-cna').value   = fmtInput(nysMinimums.cna);
   document.getElementById('min-lpnrn').value = fmtInput(nysMinimums.lpnRn);
@@ -1074,7 +1074,8 @@ function initMinimumInputs() {
   }
   const resetBtn = document.getElementById('min-reset');
   if (resetBtn) {
-    resetBtn.addEventListener('click', () => {
+    resetBtn.addEventListener('click', (e) => {
+      e.preventDefault(); // prevent <details> toggle when button is inside <summary>
       const d = getStateMinDefaults(currentFacilityState);
       nysMinimums = { cna: d.cna, lpnRn: d.lpnRn, total: d.total };
       saveMinimums(currentFacilityState, nysMinimums);
