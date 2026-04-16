@@ -21,28 +21,45 @@ const HARD_MIN_DATE = '2017-07-01'; // earliest date users are allowed to query
 
 let latestQuarterURL = null;
 
-// NYS minimum staffing requirements (10 NYCRR 415.13 — 2022 nursing home staffing law).
-// Editable in the UI and persisted in localStorage so the user can update if NYS changes them.
-const MIN_CACHE_KEY = 'pbj.nysMinimums.v1';
-const MIN_DEFAULTS = { cna: 2.2, lpnRn: 1.1, total: 3.5 };
-function loadMinimums() {
+// State & federal minimum staffing requirements — editable per-state in the UI.
+const STATE_NAMES = {
+  AL:'Alabama',AK:'Alaska',AZ:'Arizona',AR:'Arkansas',CA:'California',CO:'Colorado',
+  CT:'Connecticut',DE:'Delaware',FL:'Florida',GA:'Georgia',HI:'Hawaii',ID:'Idaho',
+  IL:'Illinois',IN:'Indiana',IA:'Iowa',KS:'Kansas',KY:'Kentucky',LA:'Louisiana',
+  ME:'Maine',MD:'Maryland',MA:'Massachusetts',MI:'Michigan',MN:'Minnesota',
+  MS:'Mississippi',MO:'Missouri',MT:'Montana',NE:'Nebraska',NV:'Nevada',
+  NH:'New Hampshire',NJ:'New Jersey',NM:'New Mexico',NY:'New York',
+  NC:'North Carolina',ND:'North Dakota',OH:'Ohio',OK:'Oklahoma',OR:'Oregon',
+  PA:'Pennsylvania',RI:'Rhode Island',SC:'South Carolina',SD:'South Dakota',
+  TN:'Tennessee',TX:'Texas',UT:'Utah',VT:'Vermont',VA:'Virginia',
+  WA:'Washington',WV:'West Virginia',WI:'Wisconsin',WY:'Wyoming',DC:'D.C.',
+};
+const STATE_MIN_DEFAULTS = {
+  NY: { cna: 2.20, lpnRn: 1.10, total: 3.50, statute: '10 NYCRR 415.13' },
+};
+const FEDERAL_MIN = { cna: 2.45, lpnRn: 0.55, total: 3.00, statute: '42 CFR 483.35 (2024 final rule)' };
+function getStateMinDefaults(state) { return STATE_MIN_DEFAULTS[state] || FEDERAL_MIN; }
+function minCacheKey(state) { return `pbj.minimums.${state || 'default'}.v1`; }
+function loadMinimums(state) {
+  const d = getStateMinDefaults(state);
   try {
-    const raw = localStorage.getItem(MIN_CACHE_KEY);
+    const raw = localStorage.getItem(minCacheKey(state));
     if (raw) {
       const m = JSON.parse(raw);
       return {
-        cna:   Number.isFinite(+m.cna)   ? +m.cna   : MIN_DEFAULTS.cna,
-        lpnRn: Number.isFinite(+m.lpnRn) ? +m.lpnRn : MIN_DEFAULTS.lpnRn,
-        total: Number.isFinite(+m.total) ? +m.total : MIN_DEFAULTS.total,
+        cna:   Number.isFinite(+m.cna)   ? +m.cna   : d.cna,
+        lpnRn: Number.isFinite(+m.lpnRn) ? +m.lpnRn : d.lpnRn,
+        total: Number.isFinite(+m.total) ? +m.total : d.total,
       };
     }
   } catch {}
-  return { ...MIN_DEFAULTS };
+  return { cna: d.cna, lpnRn: d.lpnRn, total: d.total };
 }
-function saveMinimums(m) {
-  try { localStorage.setItem(MIN_CACHE_KEY, JSON.stringify(m)); } catch {}
+function saveMinimums(state, m) {
+  try { localStorage.setItem(minCacheKey(state), JSON.stringify(m)); } catch {}
 }
-let nysMinimums = loadMinimums();
+let currentFacilityState = null;
+let nysMinimums = loadMinimums(null);
 
 // ---------- field schema ----------
 
@@ -161,48 +178,44 @@ async function fetchQuarterForProvider(accessURL, providerId) {
   return res.json();
 }
 
-// ---------- NY state benchmark ----------
+// ---------- state benchmark ----------
 
-const NY_PAGE_SIZE = 6500;          // observed CMS cap for state-wide queries
-const NY_CACHE_PREFIX = 'pbj.nys.'; // + quarterKey + '.v1'
-const NY_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const STATE_PAGE_SIZE = 6500;
+const STATE_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
-function nyCacheKey(quarterKey) { return `${NY_CACHE_PREFIX}${quarterKey}.v1`; }
+function stateCacheKey(state, quarterKey) { return `pbj.state.${state}.${quarterKey}.v1`; }
 
-function readNyCache(quarterKey) {
+function readStateCache(state, quarterKey) {
   try {
-    const raw = localStorage.getItem(nyCacheKey(quarterKey));
+    const raw = localStorage.getItem(stateCacheKey(state, quarterKey));
     if (!raw) return null;
     const { fetchedAt, byDate } = JSON.parse(raw);
-    if (Date.now() - fetchedAt > NY_CACHE_TTL_MS) return null;
+    if (Date.now() - fetchedAt > STATE_CACHE_TTL_MS) return null;
     return byDate;
   } catch { return null; }
 }
 
-function writeNyCache(quarterKey, byDate) {
+function writeStateCache(state, quarterKey, byDate) {
   try {
-    localStorage.setItem(nyCacheKey(quarterKey), JSON.stringify({ fetchedAt: Date.now(), byDate }));
+    localStorage.setItem(stateCacheKey(state, quarterKey), JSON.stringify({ fetchedAt: Date.now(), byDate }));
   } catch {}
 }
 
-// Pulls every NY row in a quarter (paginated), accumulating per-day totals.
-// Returns { WorkDate: { census, cna, lpn, rn, lpnAdmin, naTrn, rows } }.
-async function fetchNyQuarterAggregated(accessURL, quarterKey, onProgress) {
-  const cached = readNyCache(quarterKey);
+async function fetchStateQuarterAggregated(accessURL, quarterKey, state, onProgress) {
+  const cached = readStateCache(state, quarterKey);
   if (cached) return cached;
 
   const byDate = {};
   let offset = 0;
   let pageIndex = 0;
-  // Safety cap: state quarters top out around ~60k rows
   const HARD_CAP = 200000;
   while (offset < HARD_CAP) {
     const u = new URL(accessURL);
-    u.searchParams.set('filter[STATE]', 'NY');
-    u.searchParams.set('size', String(NY_PAGE_SIZE));
+    u.searchParams.set('filter[STATE]', state);
+    u.searchParams.set('size', String(STATE_PAGE_SIZE));
     u.searchParams.set('offset', String(offset));
     const res = await fetch(u.toString(), { headers: { Accept: 'application/json' } });
-    if (!res.ok) throw new Error(`NY HTTP ${res.status} at offset ${offset}`);
+    if (!res.ok) throw new Error(`${state} HTTP ${res.status} at offset ${offset}`);
     const rows = await res.json();
     for (const r of rows) {
       const d = r.WorkDate;
@@ -219,11 +232,11 @@ async function fetchNyQuarterAggregated(accessURL, quarterKey, onProgress) {
     }
     pageIndex += 1;
     if (onProgress) onProgress(quarterKey, pageIndex, rows.length);
-    if (rows.length < NY_PAGE_SIZE) break;
-    offset += NY_PAGE_SIZE;
+    if (rows.length < STATE_PAGE_SIZE) break;
+    offset += STATE_PAGE_SIZE;
   }
 
-  writeNyCache(quarterKey, byDate);
+  writeStateCache(state, quarterKey, byDate);
   return byDate;
 }
 
@@ -371,21 +384,32 @@ async function generateReport({ providerId, startDate, endDate, onProgress }) {
   const startCompact = isoToCompact(startDate);
   const endCompact = isoToCompact(endDate);
 
-  // Kick off facility fetches and NY benchmark fetches concurrently.
+  // Phase 1: fetch facility data to detect state.
   onProgress?.(`Fetching staffing data for facility ${providerId}…`);
-  const facilityPromise = Promise.allSettled(
+  const facilityResults = await Promise.allSettled(
     available.map(q => fetchQuarterForProvider(catalog[q], providerId).then(rows => ({ q, rows })))
   );
-  const nyPromise = Promise.allSettled(
+
+  // Detect facility state from first available row.
+  let facilityState = null;
+  for (const r of facilityResults) {
+    if (r.status === 'fulfilled') {
+      for (const row of (r.value.rows || [])) {
+        if (row.STATE) { facilityState = row.STATE; break; }
+      }
+      if (facilityState) break;
+    }
+  }
+
+  // Phase 2: fetch state-wide benchmark using detected state.
+  const nyResults = facilityState ? await Promise.allSettled(
     available.map(async (q) => {
-      const byDate = await fetchNyQuarterAggregated(catalog[q], q, (qk, page, count) => {
-        onProgress?.(`Loading NY state benchmark ${qk} (page ${page}, ${count} rows)…`);
+      const byDate = await fetchStateQuarterAggregated(catalog[q], q, facilityState, (qk, page, count) => {
+        onProgress?.(`Loading ${facilityState} state benchmark ${qk} (page ${page}, ${count} rows)…`);
       });
       return { q, byDate };
     })
-  );
-
-  const [facilityResults, nyResults] = await Promise.all([facilityPromise, nyPromise]);
+  ) : [];
 
   const errors = [];
   const rowsByQuarter = {};
@@ -439,6 +463,7 @@ async function generateReport({ providerId, startDate, endDate, onProgress }) {
   return {
     providerId, startDate, endDate,
     facility,
+    facilityState,
     quartersQueried: available,
     quartersMissing: missing,
     errors,
@@ -507,6 +532,7 @@ function renderReport(data) {
   resultsEl.hidden = false;
   document.querySelector('.breakdown').removeAttribute('open');
   document.querySelector('.daily-section').removeAttribute('open');
+  if (data.facilityState) updateMinimumsForState(data.facilityState);
 
   const s = data.summary;
   const f = data.facility || {};
@@ -542,6 +568,8 @@ function renderReport(data) {
 }
 
 function renderBenchmark(data) {
+  const stateLabel = data.facilityState || 'State';
+  document.querySelectorAll('.state-avg-label').forEach(el => el.textContent = `${stateLabel} avg`);
   const ny = data.nySummary;
   const s = data.summary;
   const METRICS = [
@@ -908,18 +936,19 @@ function renderBreakdown(data) {
   `;
   $('#formula-table').innerHTML = formulaRows;
 
-  // ---- NY state benchmark row in the same panel ----
+  // ---- state benchmark row in the same panel ----
   const ny = data.nySummary;
+  const st = data.facilityState || 'State';
   if (ny && ny.census > 0) {
     const nyBlock = `
-      <tr class="ny-header"><td colspan="3"><strong>All NYS benchmark over the same period</strong></td></tr>
-      <tr><td>NY rows / distinct days</td><td class="num">${fmt0.format(ny.rows)} / ${fmt0.format(ny.distinctDates)}</td><td class="muted">Sum of per-facility daily rows across all NY facilities.</td></tr>
-      <tr><td><strong>NY total resident-days</strong></td><td class="num"><strong>${fmt0.format(ny.census)}</strong></td><td class="muted">Denominator for NY HPRDs.</td></tr>
-      <tr><td>NY CNA hours</td><td class="num">${fmt0.format(ny.hours.cna)}</td><td class="num">${fmt0.format(ny.hours.cna)} ÷ ${fmt0.format(ny.census)} = <strong>${fmt2.format(ny.hprd.cna)}</strong></td></tr>
-      <tr><td>NY LPN hours</td><td class="num">${fmt0.format(ny.hours.lpn)}</td><td class="num">${fmt0.format(ny.hours.lpn)} ÷ ${fmt0.format(ny.census)} = <strong>${fmt2.format(ny.hprd.lpn)}</strong></td></tr>
-      <tr><td>NY RN hours</td><td class="num">${fmt0.format(ny.hours.rn)}</td><td class="num">${fmt0.format(ny.hours.rn)} ÷ ${fmt0.format(ny.census)} = <strong>${fmt2.format(ny.hprd.rn)}</strong></td></tr>
-      <tr><td>NY LPN + RN hours</td><td class="num">${fmt0.format(ny.hours.lpnRn)}</td><td class="num">${fmt0.format(ny.hours.lpnRn)} ÷ ${fmt0.format(ny.census)} = <strong>${fmt2.format(ny.hprd.lpnRn)}</strong></td></tr>
-      <tr class="formula-total"><td><strong>NY Total hours</strong></td><td class="num">${fmt0.format(ny.hours.total)}</td><td class="num">${fmt0.format(ny.hours.total)} ÷ ${fmt0.format(ny.census)} = <strong>${fmt2.format(ny.hprd.total)}</strong></td></tr>
+      <tr class="ny-header"><td colspan="3"><strong>All ${st} benchmark over the same period</strong></td></tr>
+      <tr><td>${st} rows / distinct days</td><td class="num">${fmt0.format(ny.rows)} / ${fmt0.format(ny.distinctDates)}</td><td class="muted">Sum of per-facility daily rows across all ${st} facilities.</td></tr>
+      <tr><td><strong>${st} total resident-days</strong></td><td class="num"><strong>${fmt0.format(ny.census)}</strong></td><td class="muted">Denominator for ${st} HPRDs.</td></tr>
+      <tr><td>${st} CNA hours</td><td class="num">${fmt0.format(ny.hours.cna)}</td><td class="num">${fmt0.format(ny.hours.cna)} ÷ ${fmt0.format(ny.census)} = <strong>${fmt2.format(ny.hprd.cna)}</strong></td></tr>
+      <tr><td>${st} LPN hours</td><td class="num">${fmt0.format(ny.hours.lpn)}</td><td class="num">${fmt0.format(ny.hours.lpn)} ÷ ${fmt0.format(ny.census)} = <strong>${fmt2.format(ny.hprd.lpn)}</strong></td></tr>
+      <tr><td>${st} RN hours</td><td class="num">${fmt0.format(ny.hours.rn)}</td><td class="num">${fmt0.format(ny.hours.rn)} ÷ ${fmt0.format(ny.census)} = <strong>${fmt2.format(ny.hprd.rn)}</strong></td></tr>
+      <tr><td>${st} LPN + RN hours</td><td class="num">${fmt0.format(ny.hours.lpnRn)}</td><td class="num">${fmt0.format(ny.hours.lpnRn)} ÷ ${fmt0.format(ny.census)} = <strong>${fmt2.format(ny.hprd.lpnRn)}</strong></td></tr>
+      <tr class="formula-total"><td><strong>${st} Total hours</strong></td><td class="num">${fmt0.format(ny.hours.total)}</td><td class="num">${fmt0.format(ny.hours.total)} ÷ ${fmt0.format(ny.census)} = <strong>${fmt2.format(ny.hprd.total)}</strong></td></tr>
     `;
     $('#formula-table').insertAdjacentHTML('beforeend', nyBlock);
   }
@@ -993,7 +1022,22 @@ splitToggle.addEventListener('change', () => {
   if (currentReport) renderTable(currentReport);
 });
 
-// ---------- NYS minimum inputs ----------
+// ---------- minimum inputs ----------
+
+function updateMinimumsForState(state) {
+  currentFacilityState = state;
+  nysMinimums = loadMinimums(state);
+  const d = getStateMinDefaults(state);
+  const stateName = STATE_NAMES[state] || state || 'Federal';
+  const titleEl = document.getElementById('minimums-title');
+  const statuteEl = document.getElementById('minimums-statute');
+  if (titleEl) titleEl.textContent = `${stateName} Minimum Staffing Requirements`;
+  if (statuteEl) statuteEl.textContent = `Statute: ${d.statute} · Click any value to edit if requirements change.`;
+  const fmtInput = (v) => (Number.isFinite(v) && v > 0 ? v : 0).toFixed(2);
+  document.getElementById('min-cna').value   = fmtInput(nysMinimums.cna);
+  document.getElementById('min-lpnrn').value = fmtInput(nysMinimums.lpnRn);
+  document.getElementById('min-total').value = fmtInput(nysMinimums.total);
+}
 
 function initMinimumInputs() {
   const cfg = [
@@ -1008,7 +1052,7 @@ function initMinimumInputs() {
     el.addEventListener('input', () => {
       const v = parseFloat(el.value);
       nysMinimums[key] = Number.isFinite(v) ? v : 0;
-      saveMinimums(nysMinimums);
+      saveMinimums(currentFacilityState, nysMinimums);
       if (currentReport) {
         renderMinimumsLine(currentReport);
         renderCharts(currentReport);
@@ -1017,7 +1061,6 @@ function initMinimumInputs() {
     el.addEventListener('blur', () => {
       el.value = fmtInput(nysMinimums[key]);
     });
-    // Click anywhere on the tile focuses the input
     const tile = el.closest('.min-tile');
     if (tile) {
       tile.addEventListener('click', (e) => {
@@ -1028,8 +1071,9 @@ function initMinimumInputs() {
   const resetBtn = document.getElementById('min-reset');
   if (resetBtn) {
     resetBtn.addEventListener('click', () => {
-      nysMinimums = { ...MIN_DEFAULTS };
-      saveMinimums(nysMinimums);
+      const d = getStateMinDefaults(currentFacilityState);
+      nysMinimums = { cna: d.cna, lpnRn: d.lpnRn, total: d.total };
+      saveMinimums(currentFacilityState, nysMinimums);
       for (const [id, key] of cfg) {
         document.getElementById(id).value = fmtInput(nysMinimums[key]);
       }
@@ -1257,7 +1301,7 @@ async function exportExcel() {
   const endCompactForNy = isoToCompact(data.endDate);
   const nyMonthly = nyMonthlyRows(data.nyByDate, startCompactForNy, endCompactForNy);
   {
-    const ws = wb.addWorksheet('NY State Monthly');
+    const ws = wb.addWorksheet(`${data.facilityState || 'State'} Monthly`);
     ws.columns = [
       { header: 'Month',              key: 'month',    width: 10 },
       { header: 'Days',               key: 'days',     width: 8,  numFmt: NUM0 },
@@ -1284,7 +1328,7 @@ async function exportExcel() {
     if (nyMonthly.length > 0) {
       try {
         const nyChartHtml = buildLineChart({
-          title: 'NY state HPRD by month',
+          title: `${data.facilityState || 'State'} HPRD by month`,
           months: nyMonthly.map(m => monthKeyLabel(m.month)),
           series: [
             { label: 'CNA',      color: '#1f5fae', width: 2, values: nyMonthly.map(m => m.cna_hprd)   },
@@ -1480,7 +1524,6 @@ function initNameSearch() {
     try {
       const url = new URL(latestQuarterURL);
       url.searchParams.set('$q', term);
-      url.searchParams.set('$where', "STATE='NY'");
       url.searchParams.set('$select', 'PROVNUM,PROVNAME,CITY,STATE');
       url.searchParams.set('$limit', '200');
       const res = await fetch(url.toString(), { headers: { Accept: 'application/json' } });
@@ -1494,7 +1537,7 @@ function initNameSearch() {
         seen.add(r.PROVNUM);
         return true;
       });
-      if (!unique.length) { results.innerHTML = '<li class="search-msg">No NY facilities found.</li>'; return; }
+      if (!unique.length) { results.innerHTML = '<li class="search-msg">No facilities found.</li>'; return; }
       results.innerHTML = unique.map(r =>
         `<li data-ccn="${r.PROVNUM}">
           <div class="result-name">${r.PROVNAME}</div>
