@@ -342,6 +342,7 @@ async function loadCoverage() {
     const earliestISO = quarterToISO(earliest, 'start');
     const latestISO = quarterToISO(latest, 'end');
     latestQuarterURL = quarters[latest];
+    getFacilityIndex(); // start building search index in background
     const effectiveMin = earliestISO > HARD_MIN_DATE ? earliestISO : HARD_MIN_DATE;
     startEl.min = effectiveMin; startEl.max = latestISO;
     endEl.min = effectiveMin; endEl.max = latestISO;
@@ -1488,6 +1489,43 @@ if (xlsxBtn) {
   });
 }
 
+// ---------- facility index for name search ----------
+// Uses Socrata $select+$group to get one row per unique facility, cached 7 days.
+
+let facilityIndexPromise = null;
+
+function getFacilityIndex() {
+  if (facilityIndexPromise) return facilityIndexPromise;
+  facilityIndexPromise = (async () => {
+    const cacheKey = 'pbj.facilityIndex.v2';
+    const ttl = 7 * 24 * 60 * 60 * 1000;
+    try {
+      const raw = localStorage.getItem(cacheKey);
+      if (raw) {
+        const { ts, list } = JSON.parse(raw);
+        if (Date.now() - ts < ttl && list && list.length > 100) return list;
+      }
+    } catch {}
+    if (!latestQuarterURL) return null;
+    try {
+      const url = new URL(latestQuarterURL);
+      url.searchParams.set('$select', 'PROVNUM,PROVNAME,CITY,STATE');
+      url.searchParams.set('$group', 'PROVNUM,PROVNAME,CITY,STATE');
+      url.searchParams.set('$limit', '20000');
+      const res = await fetch(url.toString(), { headers: { Accept: 'application/json' } });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const rows = await res.json();
+      const list = rows.filter(r => r.PROVNUM && r.PROVNAME);
+      if (list.length > 100) {
+        try { localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), list })); } catch {}
+        return list;
+      }
+    } catch (e) { console.warn('Facility index build failed:', e.message); }
+    return null;
+  })();
+  return facilityIndexPromise;
+}
+
 // ---------- name search ----------
 
 function initNameSearch() {
@@ -1501,7 +1539,12 @@ function initNameSearch() {
   toggle.addEventListener('click', () => {
     box.hidden = !box.hidden;
     toggle.textContent = box.hidden ? 'search by name' : 'hide search';
-    if (!box.hidden) { results.innerHTML = ''; input.value = ''; input.focus(); }
+    if (!box.hidden) {
+      results.innerHTML = '';
+      input.value = '';
+      input.focus();
+      getFacilityIndex(); // warm cache in background
+    }
   });
 
   input.addEventListener('input', () => {
@@ -1509,7 +1552,7 @@ function initNameSearch() {
     const term = input.value.trim();
     if (term.length < 2) { results.innerHTML = ''; return; }
     results.innerHTML = '<li class="search-msg">Searching…</li>';
-    debounce = setTimeout(() => doSearch(term), 350);
+    debounce = setTimeout(() => doSearch(term), 300);
   });
 
   document.addEventListener('click', (e) => {
@@ -1517,45 +1560,31 @@ function initNameSearch() {
   });
 
   async function doSearch(term) {
-    if (!latestQuarterURL) {
-      results.innerHTML = '<li class="search-msg">Still loading catalog — try again in a moment.</li>';
+    const facilities = await getFacilityIndex();
+    if (!facilities) {
+      results.innerHTML = '<li class="search-msg">Facility index unavailable — enter CCN directly.</li>';
       return;
     }
-    try {
-      const url = new URL(latestQuarterURL);
-      url.searchParams.set('$q', term);
-      url.searchParams.set('$select', 'PROVNUM,PROVNAME,CITY,STATE');
-      url.searchParams.set('$limit', '200');
-      const res = await fetch(url.toString(), { headers: { Accept: 'application/json' } });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const rows = await res.json();
-      const termLower = term.toLowerCase();
-      const seen = new Set();
-      const unique = rows.filter(r => {
-        if (!r.PROVNUM || seen.has(r.PROVNUM)) return false;
-        if (!r.PROVNAME || !r.PROVNAME.toLowerCase().includes(termLower)) return false;
-        seen.add(r.PROVNUM);
-        return true;
+    const termLower = term.toLowerCase();
+    const matches = facilities
+      .filter(r => r.PROVNAME && r.PROVNAME.toLowerCase().includes(termLower))
+      .slice(0, 40);
+    if (!matches.length) { results.innerHTML = '<li class="search-msg">No facilities found.</li>'; return; }
+    results.innerHTML = matches.map(r =>
+      `<li data-ccn="${r.PROVNUM}">
+        <div class="result-name">${r.PROVNAME}</div>
+        <div class="result-meta">${r.CITY}, ${r.STATE} · CCN ${r.PROVNUM}</div>
+      </li>`
+    ).join('');
+    results.querySelectorAll('li[data-ccn]').forEach(li => {
+      li.addEventListener('click', () => {
+        ccnInput.value = li.dataset.ccn;
+        results.innerHTML = '';
+        box.hidden = true;
+        toggle.textContent = 'search by name';
+        input.value = '';
       });
-      if (!unique.length) { results.innerHTML = '<li class="search-msg">No facilities found.</li>'; return; }
-      results.innerHTML = unique.map(r =>
-        `<li data-ccn="${r.PROVNUM}">
-          <div class="result-name">${r.PROVNAME}</div>
-          <div class="result-meta">${r.CITY}, ${r.STATE} · CCN ${r.PROVNUM}</div>
-        </li>`
-      ).join('');
-      results.querySelectorAll('li[data-ccn]').forEach(li => {
-        li.addEventListener('click', () => {
-          ccnInput.value = li.dataset.ccn;
-          results.innerHTML = '';
-          box.hidden = true;
-          toggle.textContent = 'search by name';
-          input.value = '';
-        });
-      });
-    } catch (e) {
-      results.innerHTML = `<li class="search-msg">Search error: ${e.message}</li>`;
-    }
+    });
   }
 }
 
