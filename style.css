@@ -360,12 +360,10 @@ button.ghost:hover { background: #f2f4f8; color: var(--text); }
   margin-left: auto;
   font-weight: 600;
   font-size: 11px;
-  padding: 1px 6px;
-  border-radius: 10px;
 }
-.metric .delta.good    { background: #e6f4ea; color: var(--good); }
-.metric .delta.bad     { background: #fcebec; color: var(--bad); }
-.metric .delta.neutral { background: #eef1f5; color: var(--muted); }
+.metric .delta.good    { color: var(--good); }
+.metric .delta.bad     { color: var(--bad); }
+.metric .delta.neutral { color: var(--muted); }
 
 .kv-table tr.ny-header td {
   background: #f2f7fd;
