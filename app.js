@@ -598,8 +598,8 @@ function renderBenchmark(data) {
     if (nyVal > 0 && facVal > 0) {
       const diff = facVal - nyVal;
       const pct = (diff / nyVal) * 100;
-      const sign = diff >= 0 ? '+' : '−';
-      dEl.textContent = `${sign}${Math.abs(pct).toFixed(1)}%`;
+      const sign = diff >= 0 ? '▲' : '▼';
+      dEl.textContent = `${sign} ${Math.abs(pct).toFixed(1)}%`;
       if (Math.abs(pct) < 2) dEl.className = 'delta neutral';
       else if (pct >= 0) dEl.className = 'delta good';
       else dEl.className = 'delta bad';
@@ -861,10 +861,10 @@ function renderMinimumsLine(data) {
     const diff = facVal - minVal;
     const pct = minVal > 0 ? (diff / minVal) * 100 : 0;
     if (facVal >= minVal) {
-      dEl.textContent = `+${Math.abs(pct).toFixed(1)}%`;
+      dEl.textContent = `▲ ${Math.abs(pct).toFixed(1)}%`;
       dEl.className = 'delta good';
     } else {
-      dEl.textContent = `−${Math.abs(pct).toFixed(1)}%`;
+      dEl.textContent = `▼ ${Math.abs(pct).toFixed(1)}%`;
       dEl.className = 'delta bad';
     }
   }

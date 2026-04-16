@@ -546,8 +546,8 @@ details[open] .toggle-hint::before { content: 'click to collapse'; }
 }
 
 .metric.total {
-  background: var(--accent);
-  border-color: var(--accent-dark);
+  background: #4a86cc;
+  border-color: #3a72b8;
   color: #fff;
 }
 .metric.total .label,
