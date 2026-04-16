@@ -43,50 +43,53 @@
         </div>
       </form>
       <p id="coverage" class="coverage"></p>
-
-      <details class="minimums-compact" id="minimums-details">
-        <summary class="minimums-summary">
-          <span class="minimums-compact-title" id="minimums-title">Minimum Staffing Requirements</span>
-          <span class="minimums-statute" id="minimums-statute">Generate a report to load state-specific minimums.</span>
-          <button type="button" id="min-reset" class="ghost minimums-reset">Reset</button>
-        </summary>
-        <div class="minimums-compact-grid">
-          <label class="min-tile">
-            <span class="min-label">CNA</span>
-            <input type="number" id="min-cna" step="0.01" min="0" value="2.20" />
-            <span class="min-unit">HPRD min</span>
-            <span class="min-desc">CNA + Med Aide</span>
-          </label>
-          <label class="min-tile">
-            <span class="min-label">LPN + RN</span>
-            <input type="number" id="min-lpnrn" step="0.01" min="0" value="1.10" />
-            <span class="min-unit">HPRD min</span>
-            <span class="min-desc">Licensed nurses</span>
-          </label>
-          <label class="min-tile">
-            <span class="min-label">Total</span>
-            <input type="number" id="min-total" step="0.01" min="0" value="3.50" />
-            <span class="min-unit">HPRD min</span>
-            <span class="min-desc">All nurse staffing</span>
-          </label>
-        </div>
-      </details>
     </section>
 
     <section id="status" class="status" hidden></section>
 
     <section id="results" class="results" hidden>
       <div class="card facility">
-        <div>
-          <div class="label">Facility</div>
-          <div id="f-name" class="big"></div>
-          <div id="f-loc" class="muted"></div>
-          <div id="f-meta" class="muted"></div>
+        <div class="facility-top">
+          <div>
+            <div class="label">Facility</div>
+            <div id="f-name" class="big"></div>
+            <div id="f-loc" class="muted"></div>
+            <div id="f-meta" class="muted"></div>
+          </div>
+          <div class="range-info">
+            <div class="label">Reporting period</div>
+            <div id="f-range" class="big"></div>
+            <div id="f-days" class="muted"></div>
+          </div>
         </div>
-        <div class="range-info">
-          <div class="label">Reporting period</div>
-          <div id="f-range" class="big"></div>
-          <div id="f-days" class="muted"></div>
+        <div class="facility-minimums">
+          <div class="facility-minimums-header">
+            <div>
+              <span class="minimums-compact-title" id="minimums-title">Staffing Minimums</span>
+              <span class="minimums-statute" id="minimums-statute"></span>
+            </div>
+            <button type="button" id="min-reset" class="ghost minimums-reset">Reset to defaults</button>
+          </div>
+          <div class="minimums-compact-grid">
+            <label class="min-tile">
+              <span class="min-label">CNA</span>
+              <input type="number" id="min-cna" step="0.01" min="0" value="2.20" />
+              <span class="min-unit">HPRD min</span>
+              <span class="min-desc">CNA + Med Aide</span>
+            </label>
+            <label class="min-tile">
+              <span class="min-label">LPN + RN</span>
+              <input type="number" id="min-lpnrn" step="0.01" min="0" value="1.10" />
+              <span class="min-unit">HPRD min</span>
+              <span class="min-desc">Licensed nurses</span>
+            </label>
+            <label class="min-tile">
+              <span class="min-label">Total</span>
+              <input type="number" id="min-total" step="0.01" min="0" value="3.50" />
+              <span class="min-unit">HPRD min</span>
+              <span class="min-desc">All nurse staffing</span>
+            </label>
+          </div>
         </div>
       </div>
 
