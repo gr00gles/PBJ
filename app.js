@@ -745,7 +745,7 @@ function buildLineChart({ title, months, series, minValue, minLabel, deltas, wid
     </span>
   `).join('');
   const minLegend = Number.isFinite(minValue) && minValue > 0
-    ? `<span class="legend-item"><span class="legend-swatch legend-min"></span>NYS min ${minValue.toFixed(2)}</span>` : '';
+    ? `<span class="legend-item"><span class="legend-swatch legend-min"></span>${minLabel || 'State min'} ${minValue.toFixed(2)}</span>` : '';
 
   // Deltas under the title (NY avg and NYS min if provided)
   const pill = (d) => {
@@ -807,9 +807,10 @@ function renderCharts(data) {
   const facColor = '#1f5fae';
   const nyColor  = '#5a6675';
 
+  const stateLabel = data.facilityState || 'State';
   const mkSeries = (key) => ([
-    { label: 'Facility', color: facColor, width: 2.5, values: monthly.map(m => m[key].fac) },
-    { label: 'NY avg',   color: nyColor,  width: 2,   dash: '5 4', values: monthly.map(m => m[key].ny) },
+    { label: 'Facility',          color: facColor, width: 2.5, values: monthly.map(m => m[key].fac) },
+    { label: `${stateLabel} avg`, color: nyColor,  width: 2,   dash: '5 4', values: monthly.map(m => m[key].ny) },
   ]);
 
   const charts = [
@@ -825,15 +826,15 @@ function renderCharts(data) {
 
   container.innerHTML = charts.map(c => {
     const deltas = {
-      ny:  nyHprd ? deltaDescriptor(facHprd[c.key], nyHprd[c.key], 'vs NY avg') : null,
-      min: c.minValue ? deltaDescriptor(facHprd[c.key], c.minValue, 'vs NYS min') : null,
+      ny:  nyHprd ? deltaDescriptor(facHprd[c.key], nyHprd[c.key], `vs ${stateLabel} avg`) : null,
+      min: c.minValue ? deltaDescriptor(facHprd[c.key], c.minValue, `vs ${stateLabel} min`) : null,
     };
     return buildLineChart({
       title: c.title,
       months,
       series: mkSeries(c.key),
       minValue: c.minValue,
-      minLabel: 'NYS min',
+      minLabel: `${stateLabel} min`,
       deltas,
     });
   }).join('');
@@ -1377,26 +1378,27 @@ async function exportExcel() {
     const nyDelta = Number.isFinite(nyS) && nyS > 0 ? ((s - nyS) / nyS) * 100 : null;
     const minDelta = Number.isFinite(minVal) && minVal > 0 ? ((s - minVal) / minVal) * 100 : null;
 
+    const xlStateLabel = data.facilityState || 'State';
     ws.getCell('A4').value = 'Facility HPRD (full period)';
     ws.getCell('B4').value = s; ws.getCell('B4').numFmt = NUM2;
-    ws.getCell('A5').value = 'NY state average HPRD (same period)';
+    ws.getCell('A5').value = `${xlStateLabel} state average HPRD (same period)`;
     ws.getCell('B5').value = nyS; ws.getCell('B5').numFmt = NUM2;
-    ws.getCell('C5').value = nyDelta != null ? `${nyDelta >= 0 ? '+' : ''}${nyDelta.toFixed(1)}% vs NY avg` : '';
+    ws.getCell('C5').value = nyDelta != null ? `${nyDelta >= 0 ? '+' : ''}${nyDelta.toFixed(1)}% vs ${xlStateLabel} avg` : '';
     if (minVal) {
-      ws.getCell('A6').value = 'NYS minimum HPRD';
+      ws.getCell('A6').value = `${xlStateLabel} minimum HPRD`;
       ws.getCell('B6').value = minVal; ws.getCell('B6').numFmt = NUM2;
-      ws.getCell('C6').value = minDelta != null ? `${minDelta >= 0 ? '+' : ''}${minDelta.toFixed(1)}% vs NYS min` : '';
+      ws.getCell('C6').value = minDelta != null ? `${minDelta >= 0 ? '+' : ''}${minDelta.toFixed(1)}% vs ${xlStateLabel} min` : '';
     }
 
     // Monthly comparison table
     const headerRow = minVal ? 8 : 8;
     ws.getCell(`A${headerRow}`).value = 'Month';
     ws.getCell(`B${headerRow}`).value = 'Facility HPRD';
-    ws.getCell(`C${headerRow}`).value = 'NY avg HPRD';
-    ws.getCell(`D${headerRow}`).value = 'vs NY avg %';
+    ws.getCell(`C${headerRow}`).value = `${xlStateLabel} avg HPRD`;
+    ws.getCell(`D${headerRow}`).value = `vs ${xlStateLabel} avg %`;
     if (minVal) {
-      ws.getCell(`E${headerRow}`).value = 'NYS min';
-      ws.getCell(`F${headerRow}`).value = 'vs NYS min %';
+      ws.getCell(`E${headerRow}`).value = `${xlStateLabel} min`;
+      ws.getCell(`F${headerRow}`).value = `vs ${xlStateLabel} min %`;
     }
     styleHeader(ws, headerRow);
     ws.getColumn('A').width = 12;
@@ -1434,14 +1436,14 @@ async function exportExcel() {
       const months = perMonth.map(m => m.label);
       const series = [
         { label: 'Facility', color: '#1f5fae', width: 2.5, values: perMonth.map(m => m[def.key].fac) },
-        { label: 'NY avg',   color: '#5a6675', width: 2,   dash: '5 4', values: perMonth.map(m => m[def.key].ny) },
+        { label: `${xlStateLabel} avg`, color: '#5a6675', width: 2,   dash: '5 4', values: perMonth.map(m => m[def.key].ny) },
       ];
       const chartHtml = buildLineChart({
         title: def.label,
         months,
         series,
         minValue: minVal,
-        minLabel: 'NYS min',
+        minLabel: `${xlStateLabel} min`,
         width: 720,
         height: 300,
       });
