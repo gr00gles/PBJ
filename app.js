@@ -551,27 +551,48 @@ form.addEventListener('submit', async (e) => {
 // ---------- star ratings ----------
 
 const STARS_CACHE_TTL = 24 * 60 * 60 * 1000;
-const STARS_API = 'https://data.cms.gov/provider-data/api/1/datastore/query/4pq5-n9py/0';
+const PROVIDER_INFO_URL_KEY = 'pbj.providerInfoURL.v1';
+const PROVIDER_INFO_URL_TTL = 7 * 24 * 60 * 60 * 1000;
+
+async function findProviderInfoURL() {
+  try {
+    const cached = JSON.parse(localStorage.getItem(PROVIDER_INFO_URL_KEY) || 'null');
+    if (cached && Date.now() - cached.ts < PROVIDER_INFO_URL_TTL) return cached.url;
+  } catch (_) {}
+  const res = await fetch(CATALOG_URL, { headers: { Accept: 'application/json' } });
+  if (!res.ok) throw new Error(`Catalog HTTP ${res.status}`);
+  const catalog = await res.json();
+  const ds = (catalog.dataset || []).find(d => {
+    const t = (d.title || '').toLowerCase();
+    return t.includes('provider information') &&
+           (t.includes('nursing home') || t.includes('nursing') || t.includes('care compare'));
+  });
+  if (!ds) throw new Error(`Provider info dataset not in catalog. Titles: ${(catalog.dataset||[]).slice(0,5).map(d=>d.title).join(' | ')}`);
+  const apiDist = (ds.distribution || []).find(d => d.format === 'API');
+  if (!apiDist?.accessURL) throw new Error('No API URL for provider info dataset');
+  const url = apiDist.accessURL;
+  try { localStorage.setItem(PROVIDER_INFO_URL_KEY, JSON.stringify({ ts: Date.now(), url })); } catch (_) {}
+  return url;
+}
 
 async function fetchStarRatings(provnum) {
-  const cacheKey = `pbj.stars.${provnum}.v1`;
+  const cacheKey = `pbj.stars.${provnum}.v2`;
   try {
     const cached = JSON.parse(localStorage.getItem(cacheKey) || 'null');
     if (cached && Date.now() - cached.ts < STARS_CACHE_TTL) return cached.data;
   } catch (_) {}
-  const url = new URL(STARS_API);
-  url.searchParams.set('conditions[0][property]', 'provnum');
-  url.searchParams.set('conditions[0][value]', provnum);
-  url.searchParams.set('conditions[0][operator]', '=');
-  url.searchParams.set('limit', '1');
-  const res = await fetch(url);
+  const baseURL = await findProviderInfoURL();
+  const url = new URL(baseURL);
+  url.searchParams.set('filter[PROVNUM]', provnum);
+  url.searchParams.set('size', '1');
+  const res = await fetch(url, { headers: { Accept: 'application/json' } });
   const rawText = await res.text();
   if (!res.ok) {
     renderStarsDebug(`HTTP ${res.status}: ${rawText.slice(0, 300)}`);
     throw new Error(`Stars API ${res.status}`);
   }
   const json = JSON.parse(rawText);
-  const row = (json.results || json.data || json.rows || [])[0] || null;
+  const row = (json.data || json.results || json.rows || [])[0] || null;
   renderStarsDebug(JSON.stringify(row || json, null, 2).slice(0, 1000));
   if (row) {
     try { localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data: row })); } catch (_) {}
