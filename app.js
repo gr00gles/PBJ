@@ -537,8 +537,7 @@ form.addEventListener('submit', async (e) => {
     renderReport(data);
     setStatus('', '');
     // Fetch star ratings async — don't block report display
-    renderStarsDebug('Loading star ratings…');
-    fetchStarRatings(data.providerId).then(renderStars).catch((err) => renderStarsDebug(`Error: ${err.message}`));
+    renderCareCompareLink(data.providerId, data.facility?.provname);
   } catch (err) {
     console.error(err);
     setStatus('error', `Error: ${err.message}`);
@@ -550,66 +549,6 @@ form.addEventListener('submit', async (e) => {
 
 // ---------- star ratings ----------
 
-const STARS_CACHE_TTL = 24 * 60 * 60 * 1000;
-const PROVIDER_INFO_URL_KEY = 'pbj.providerInfoURL.v1';
-const PROVIDER_INFO_URL_TTL = 7 * 24 * 60 * 60 * 1000;
-
-async function findProviderInfoURL() {
-  try {
-    const cached = JSON.parse(localStorage.getItem(PROVIDER_INFO_URL_KEY) || 'null');
-    if (cached && Date.now() - cached.ts < PROVIDER_INFO_URL_TTL) return cached.url;
-  } catch (_) {}
-
-  const res = await fetch(CATALOG_URL, { headers: { Accept: 'application/json' } });
-  if (!res.ok) throw new Error(`Catalog HTTP ${res.status}`);
-  const catalog = await res.json();
-  const all = catalog.dataset || [];
-
-  // Show all nursing-home-related titles for debugging
-  const nursing = all.filter(d => (d.title||'').toLowerCase().includes('nurs'));
-  renderStarsDebug('Nursing datasets in catalog:\n' + nursing.map(d => d.title).join('\n'));
-
-  const ds = nursing.find(d => {
-    const t = (d.title || '').toLowerCase();
-    return t.includes('provider') || t.includes('care compare') || t.includes('staffing');
-  });
-  if (!ds) throw new Error(`None matched. All nursing titles:\n${nursing.map(d=>d.title).join('\n')}`);
-
-  const apiDist = (ds.distribution || []).find(d =>
-    (d.format || '').toUpperCase() === 'API' || (d.accessURL || '').includes('/datastore/query/')
-  );
-  if (!apiDist?.accessURL) throw new Error(`No API dist. Distributions: ${JSON.stringify(ds.distribution).slice(0,300)}`);
-
-  const url = apiDist.accessURL;
-  try { localStorage.setItem(PROVIDER_INFO_URL_KEY, JSON.stringify({ ts: Date.now(), url })); } catch (_) {}
-  return url;
-}
-
-async function fetchStarRatings(provnum) {
-  const cacheKey = `pbj.stars.${provnum}.v2`;
-  try {
-    const cached = JSON.parse(localStorage.getItem(cacheKey) || 'null');
-    if (cached && Date.now() - cached.ts < STARS_CACHE_TTL) return cached.data;
-  } catch (_) {}
-  const baseURL = await findProviderInfoURL();
-  const url = new URL(baseURL);
-  url.searchParams.set('filter[PROVNUM]', provnum);
-  url.searchParams.set('size', '1');
-  const res = await fetch(url, { headers: { Accept: 'application/json' } });
-  const rawText = await res.text();
-  if (!res.ok) {
-    renderStarsDebug(`HTTP ${res.status}: ${rawText.slice(0, 300)}`);
-    throw new Error(`Stars API ${res.status}`);
-  }
-  const json = JSON.parse(rawText);
-  const row = (json.data || json.results || json.rows || [])[0] || null;
-  renderStarsDebug(JSON.stringify(row || json, null, 2).slice(0, 1000));
-  if (row) {
-    try { localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data: row })); } catch (_) {}
-  }
-  return row;
-}
-
 function renderStarsDebug(msg) {
   const el = document.getElementById('f-stars');
   if (!el) return;
@@ -617,31 +556,16 @@ function renderStarsDebug(msg) {
   el.hidden = false;
 }
 
-function renderStars(row) {
+function renderCareCompareLink(provnum, provname) {
   const el = document.getElementById('f-stars');
   if (!el) return;
-  if (!row) { el.hidden = true; return; }
-
-  const star = (n) => {
-    const v = parseInt(n);
-    if (!v || v < 1 || v > 5) return '<span class="star-na">N/A</span>';
-    return '<span class="star-filled">' + '★'.repeat(v) + '</span>' +
-           '<span class="star-empty">' + '★'.repeat(5 - v) + '</span>';
-  };
-
-  // Field names — CMS Care Compare provider info API
-  const overall   = row.overall_rating   ?? row.overall          ?? row.overallrating;
-  const staffing  = row.staffing_rating  ?? row.staffingrating   ?? row.staffing;
-  const inspect   = row.health_inspection_rating ?? row.survey_rating ?? row.healthinspection;
-  const quality   = row.quality_rating   ?? row.qm_rating        ?? row.qualitymeasurerating;
-
+  const url = `https://www.medicare.gov/care-compare/details/nursing-home/${provnum}`;
   el.innerHTML = `
-    <div class="stars-header"><span class="label">CMS Care Compare Ratings</span><span class="muted stars-note">as of last CMS update</span></div>
-    <div class="stars-grid">
-      <div class="star-item"><div class="star-label">Overall</div><div class="star-row">${star(overall)}</div></div>
-      <div class="star-item"><div class="star-label">Health Inspection</div><div class="star-row">${star(inspect)}</div></div>
-      <div class="star-item"><div class="star-label">Staffing</div><div class="star-row">${star(staffing)}</div></div>
-      <div class="star-item"><div class="star-label">Quality Measures</div><div class="star-row">${star(quality)}</div></div>
+    <div class="care-compare-row">
+      <span class="label">CMS Care Compare</span>
+      <a href="${url}" target="_blank" rel="noopener" class="care-compare-link">
+        View star ratings, inspections &amp; deficiencies ↗
+      </a>
     </div>`;
   el.hidden = false;
 }
