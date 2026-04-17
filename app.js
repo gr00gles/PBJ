@@ -538,6 +538,7 @@ form.addEventListener('submit', async (e) => {
     setStatus('', '');
     // Fetch star ratings async — don't block report display
     renderCareCompareLink(data.providerId, data.facility?.provname);
+    findAndShowStars(data.providerId).catch(err => starDebug(`Error: ${err.message}`));
   } catch (err) {
     console.error(err);
     setStatus('error', `Error: ${err.message}`);
@@ -549,11 +550,39 @@ form.addEventListener('submit', async (e) => {
 
 // ---------- star ratings ----------
 
-function renderStarsDebug(msg) {
-  const el = document.getElementById('f-stars');
+function starDebug(msg) {
+  const el = document.getElementById('star-debug');
   if (!el) return;
-  el.innerHTML = `<pre style="font-size:11px;overflow-x:auto;white-space:pre-wrap;color:#333;background:#f5f5f5;padding:10px;border-radius:6px">${msg}</pre>`;
-  el.hidden = false;
+  el.style.display = 'block';
+  el.textContent = msg;
+}
+
+async function findAndShowStars(provnum) {
+  starDebug('Searching CMS catalog for nursing home provider data…');
+  const res = await fetch(CATALOG_URL, { headers: { Accept: 'application/json' } });
+  if (!res.ok) { starDebug(`Catalog fetch failed: ${res.status}`); return; }
+  const catalog = await res.json();
+  const all = catalog.dataset || [];
+  starDebug(`Catalog loaded. ${all.length} datasets total.`);
+
+  // Find any dataset with API distributions under the working datastore path
+  const nursing = all.filter(d => {
+    const t = (d.title || '').toLowerCase();
+    return t.includes('nurs') || t.includes('care compare') || t.includes('ltc') || t.includes('snf');
+  });
+  const nursingList = `Datasets with nursing/SNF/LTC/Care Compare in title (${nursing.length}):\n` +
+    nursing.map(d => `  • ${d.title}`).join('\n');
+
+  const withApi = nursing.filter(d =>
+    (d.distribution || []).some(x => (x.format || '').toUpperCase() === 'API')
+  );
+  const apiList = `\n\nWith API distribution (${withApi.length}):\n` +
+    withApi.map(d => {
+      const url = (d.distribution.find(x => x.format === 'API') || {}).accessURL || '?';
+      return `  • ${d.title}\n    ${url}`;
+    }).join('\n');
+
+  starDebug(nursingList + apiList);
 }
 
 function renderCareCompareLink(provnum, provname) {
