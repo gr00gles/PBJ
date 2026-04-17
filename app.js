@@ -537,7 +537,8 @@ form.addEventListener('submit', async (e) => {
     renderReport(data);
     setStatus('', '');
     // Fetch star ratings async — don't block report display
-    fetchStarRatings(data.providerId).then(renderStars).catch(() => renderStars(null));
+    renderStarsDebug('Loading star ratings…');
+    fetchStarRatings(data.providerId).then(renderStars).catch((err) => renderStarsDebug(`Error: ${err.message}`));
   } catch (err) {
     console.error(err);
     setStatus('error', `Error: ${err.message}`);
