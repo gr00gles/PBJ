@@ -536,6 +536,8 @@ form.addEventListener('submit', async (e) => {
     currentReport = data;
     renderReport(data);
     setStatus('', '');
+    // Fetch star ratings async — don't block report display
+    fetchStarRatings(data.providerId).then(renderStars).catch(() => renderStars(null));
   } catch (err) {
     console.error(err);
     setStatus('error', `Error: ${err.message}`);
@@ -544,6 +546,61 @@ form.addEventListener('submit', async (e) => {
     runBtn.textContent = 'Generate report';
   }
 });
+
+// ---------- star ratings ----------
+
+const STARS_CACHE_TTL = 24 * 60 * 60 * 1000;
+const STARS_API = 'https://data.cms.gov/provider-data/api/1/datastore/query/4pq5-n9py/0';
+
+async function fetchStarRatings(provnum) {
+  const cacheKey = `pbj.stars.${provnum}.v1`;
+  try {
+    const cached = JSON.parse(localStorage.getItem(cacheKey) || 'null');
+    if (cached && Date.now() - cached.ts < STARS_CACHE_TTL) return cached.data;
+  } catch (_) {}
+  const url = new URL(STARS_API);
+  url.searchParams.set('conditions[0][property]', 'provnum');
+  url.searchParams.set('conditions[0][value]', provnum);
+  url.searchParams.set('conditions[0][operator]', '=');
+  url.searchParams.set('limit', '1');
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Stars API ${res.status}`);
+  const json = await res.json();
+  const row = (json.results || json.data || [])[0] || null;
+  if (row) {
+    try { localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data: row })); } catch (_) {}
+  }
+  return row;
+}
+
+function renderStars(row) {
+  const el = document.getElementById('f-stars');
+  if (!el) return;
+  if (!row) { el.hidden = true; return; }
+
+  const star = (n) => {
+    const v = parseInt(n);
+    if (!v || v < 1 || v > 5) return '<span class="star-na">N/A</span>';
+    return '<span class="star-filled">' + '★'.repeat(v) + '</span>' +
+           '<span class="star-empty">' + '★'.repeat(5 - v) + '</span>';
+  };
+
+  // Field names — CMS Care Compare provider info API
+  const overall   = row.overall_rating   ?? row.overall          ?? row.overallrating;
+  const staffing  = row.staffing_rating  ?? row.staffingrating   ?? row.staffing;
+  const inspect   = row.health_inspection_rating ?? row.survey_rating ?? row.healthinspection;
+  const quality   = row.quality_rating   ?? row.qm_rating        ?? row.qualitymeasurerating;
+
+  el.innerHTML = `
+    <div class="stars-header"><span class="label">CMS Care Compare Ratings</span><span class="muted stars-note">as of last CMS update</span></div>
+    <div class="stars-grid">
+      <div class="star-item"><div class="star-label">Overall</div><div class="star-row">${star(overall)}</div></div>
+      <div class="star-item"><div class="star-label">Health Inspection</div><div class="star-row">${star(inspect)}</div></div>
+      <div class="star-item"><div class="star-label">Staffing</div><div class="star-row">${star(staffing)}</div></div>
+      <div class="star-item"><div class="star-label">Quality Measures</div><div class="star-row">${star(quality)}</div></div>
+    </div>`;
+  el.hidden = false;
+}
 
 // ---------- render ----------
 
