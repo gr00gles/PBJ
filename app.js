@@ -559,17 +559,27 @@ async function findProviderInfoURL() {
     const cached = JSON.parse(localStorage.getItem(PROVIDER_INFO_URL_KEY) || 'null');
     if (cached && Date.now() - cached.ts < PROVIDER_INFO_URL_TTL) return cached.url;
   } catch (_) {}
-  const res = await fetch(CATALOG_URL, { headers: { Accept: 'application/json' } });
-  if (!res.ok) throw new Error(`Catalog HTTP ${res.status}`);
-  const catalog = await res.json();
-  const ds = (catalog.dataset || []).find(d => {
+
+  // Search DKAN metastore for nursing home provider info dataset
+  const metaRes = await fetch(
+    'https://data.cms.gov/api/1/metastore/schemas/dataset/items?keyword=nursing%20home&keyword=provider%20information',
+    { headers: { Accept: 'application/json' } }
+  );
+  if (!metaRes.ok) throw new Error(`Metastore HTTP ${metaRes.status}`);
+  const items = await metaRes.json();
+  renderStarsDebug(`Metastore titles: ${(items||[]).slice(0,8).map(d=>d.title).join(' | ')}`);
+
+  const ds = (items || []).find(d => {
     const t = (d.title || '').toLowerCase();
-    return t.includes('provider information') &&
-           (t.includes('nursing home') || t.includes('nursing') || t.includes('care compare'));
+    return t.includes('provider information') || t.includes('care compare');
   });
-  if (!ds) throw new Error(`Provider info dataset not in catalog. Titles: ${(catalog.dataset||[]).slice(0,5).map(d=>d.title).join(' | ')}`);
-  const apiDist = (ds.distribution || []).find(d => d.format === 'API');
-  if (!apiDist?.accessURL) throw new Error('No API URL for provider info dataset');
+  if (!ds) throw new Error(`Not found. Titles: ${(items||[]).slice(0,8).map(d=>d.title).join(' | ')}`);
+
+  const apiDist = (ds.distribution || []).find(d =>
+    (d.format || '').toUpperCase() === 'API' || (d.accessURL || '').includes('/datastore/query/')
+  );
+  if (!apiDist?.accessURL) throw new Error(`No API dist in: ${JSON.stringify(ds.distribution).slice(0,200)}`);
+
   const url = apiDist.accessURL;
   try { localStorage.setItem(PROVIDER_INFO_URL_KEY, JSON.stringify({ ts: Date.now(), url })); } catch (_) {}
   return url;
