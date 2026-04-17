@@ -538,7 +538,7 @@ form.addEventListener('submit', async (e) => {
     setStatus('', '');
     // Fetch star ratings async — don't block report display
     renderCareCompareLink(data.providerId, data.facility?.provname);
-    findAndShowStars(data.providerId).catch(err => starDebug(`Error: ${err.message}`));
+    fetchAndShowStars(data.providerId);
   } catch (err) {
     console.error(err);
     setStatus('error', `Error: ${err.message}`);
@@ -550,35 +550,58 @@ form.addEventListener('submit', async (e) => {
 
 // ---------- star ratings ----------
 
-function starDebug(msg) {
-  const el = document.getElementById('star-debug');
-  if (!el) return;
-  el.style.display = 'block';
-  el.textContent = msg;
+// Set this to your Cloudflare Worker URL once deployed (see cf-worker/stars-proxy.js).
+// Leave null to show only the Care Compare link.
+const STARS_WORKER_URL = null;
+
+async function fetchAndShowStars(provnum) {
+  if (!STARS_WORKER_URL) return;
+  try {
+    const res = await fetch(`${STARS_WORKER_URL}?provnum=${provnum}`, {
+      headers: { Accept: 'application/json' },
+    });
+    if (!res.ok) return;
+    const json = await res.json();
+    const row = (json.results || json.data || [])[0];
+    if (!row) return;
+    renderStarRatings(row);
+  } catch {}
 }
 
-async function findAndShowStars(provnum) {
-  const proxied = `https://corsproxy.io/?${encodeURIComponent(
-    `https://data.cms.gov/provider-data/api/1/datastore/query/4pq5-n9py/0?conditions[0][property]=provnum&conditions[0][value]=${provnum}&conditions[0][operator]=%3D&limit=1`
-  )}`;
-  const attempts = [
-    `https://data.cms.gov/api/1/datastore/query/mj5m-pzi6/0?filter[PROVNUM]=${provnum}&size=1`,
-    `https://data.cms.gov/api/1/datastore/query/ynj2-r877/0?filter[PROVNUM]=${provnum}&size=1`,
-    proxied,
-  ];
-  for (const url of attempts) {
-    starDebug(`Trying:\n${url.slice(0, 100)}…`);
-    try {
-      const res = await fetch(url, { headers: { Accept: 'application/json' } });
-      const text = await res.text();
-      starDebug(`Status: ${res.status}\nBody: ${text.slice(0, 800)}`);
-      if (res.ok && text.includes(provnum)) { starDebug(`✓ FOUND at:\n${url}\n\n${text.slice(0,800)}`); return; }
-    } catch (e) {
-      starDebug(`Failed: ${e.message}`);
-    }
-    await new Promise(r => setTimeout(r, 400));
-  }
-  starDebug('All endpoints failed. Star ratings not available via static site CORS.');
+function renderStarRatings(row) {
+  const el = document.getElementById('f-stars');
+  if (!el) return;
+
+  const overall   = Number(row.overall_rating)  || 0;
+  const inspect   = Number(row.survey_rating)   || 0;
+  const staffing  = Number(row.staffing_rating) || 0;
+  const quality   = Number(row.quality_rating)  || 0;
+
+  const stars = (n) => n > 0
+    ? '★'.repeat(n) + '☆'.repeat(5 - n)
+    : '—';
+
+  el.innerHTML = `
+    <div class="stars-grid">
+      <div class="star-tile overall">
+        <div class="star-label">Overall</div>
+        <div class="star-glyphs">${stars(overall)}</div>
+        <div class="star-num">${overall > 0 ? overall + ' / 5' : 'N/A'}</div>
+      </div>
+      <div class="star-tile">
+        <div class="star-label">Health Inspections</div>
+        <div class="star-glyphs">${stars(inspect)}</div>
+      </div>
+      <div class="star-tile">
+        <div class="star-label">Staffing</div>
+        <div class="star-glyphs">${stars(staffing)}</div>
+      </div>
+      <div class="star-tile">
+        <div class="star-label">Quality Measures</div>
+        <div class="star-glyphs">${stars(quality)}</div>
+      </div>
+    </div>`;
+  el.hidden = false;
 }
 
 function renderCareCompareLink(provnum, provname) {
