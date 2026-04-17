@@ -558,31 +558,22 @@ function starDebug(msg) {
 }
 
 async function findAndShowStars(provnum) {
-  starDebug('Searching CMS catalog for nursing home provider data…');
-  const res = await fetch(CATALOG_URL, { headers: { Accept: 'application/json' } });
-  if (!res.ok) { starDebug(`Catalog fetch failed: ${res.status}`); return; }
-  const catalog = await res.json();
-  const all = catalog.dataset || [];
-  starDebug(`Catalog loaded. ${all.length} datasets total.`);
-
-  // Find any dataset with API distributions under the working datastore path
-  const nursing = all.filter(d => {
-    const t = (d.title || '').toLowerCase();
-    return t.includes('nurs') || t.includes('care compare') || t.includes('ltc') || t.includes('snf');
-  });
-  const nursingList = `Datasets with nursing/SNF/LTC/Care Compare in title (${nursing.length}):\n` +
-    nursing.map(d => `  • ${d.title}`).join('\n');
-
-  const withApi = nursing.filter(d =>
-    (d.distribution || []).some(x => (x.format || '').toUpperCase() === 'API')
-  );
-  const apiList = `\n\nWith API distribution (${withApi.length}):\n` +
-    withApi.map(d => {
-      const url = (d.distribution.find(x => x.format === 'API') || {}).accessURL || '?';
-      return `  • ${d.title}\n    ${url}`;
-    }).join('\n');
-
-  starDebug(nursingList + apiList);
+  const attempts = [
+    `https://data.cms.gov/resource/4pq5-n9py.json?provnum=${provnum}&$limit=1`,
+    `https://data.cms.gov/quality-of-care/nursing-home-care-compare/api/data?filter[PROVNUM]=${provnum}&size=1`,
+  ];
+  for (const url of attempts) {
+    starDebug(`Trying:\n${url}`);
+    try {
+      const res = await fetch(url, { headers: { Accept: 'application/json' } });
+      const text = await res.text();
+      starDebug(`URL: ${url}\nStatus: ${res.status}\nBody: ${text.slice(0, 600)}`);
+      if (res.ok) return;
+    } catch (e) {
+      starDebug(`URL: ${url}\nFailed: ${e.message}`);
+    }
+    await new Promise(r => setTimeout(r, 500));
+  }
 }
 
 function renderCareCompareLink(provnum, provname) {
