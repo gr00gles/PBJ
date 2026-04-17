@@ -564,15 +564,25 @@ async function fetchStarRatings(provnum) {
   url.searchParams.set('conditions[0][operator]', '=');
   url.searchParams.set('limit', '1');
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`Stars API ${res.status}`);
-  const json = await res.json();
-  console.log('[stars] raw API response:', json);
-  const row = (json.results || json.data || [])[0] || null;
-  console.log('[stars] first row:', row);
+  const rawText = await res.text();
+  if (!res.ok) {
+    renderStarsDebug(`HTTP ${res.status}: ${rawText.slice(0, 300)}`);
+    throw new Error(`Stars API ${res.status}`);
+  }
+  const json = JSON.parse(rawText);
+  const row = (json.results || json.data || json.rows || [])[0] || null;
+  renderStarsDebug(JSON.stringify(row || json, null, 2).slice(0, 1000));
   if (row) {
     try { localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data: row })); } catch (_) {}
   }
   return row;
+}
+
+function renderStarsDebug(msg) {
+  const el = document.getElementById('f-stars');
+  if (!el) return;
+  el.innerHTML = `<pre style="font-size:11px;overflow-x:auto;white-space:pre-wrap;color:#333;background:#f5f5f5;padding:10px;border-radius:6px">${msg}</pre>`;
+  el.hidden = false;
 }
 
 function renderStars(row) {
