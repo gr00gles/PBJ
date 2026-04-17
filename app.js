@@ -560,25 +560,25 @@ async function findProviderInfoURL() {
     if (cached && Date.now() - cached.ts < PROVIDER_INFO_URL_TTL) return cached.url;
   } catch (_) {}
 
-  // Search DKAN metastore for nursing home provider info dataset
-  const metaRes = await fetch(
-    'https://data.cms.gov/api/1/metastore/schemas/dataset/items?keyword=nursing%20home&keyword=provider%20information',
-    { headers: { Accept: 'application/json' } }
-  );
-  if (!metaRes.ok) throw new Error(`Metastore HTTP ${metaRes.status}`);
-  const items = await metaRes.json();
-  renderStarsDebug(`Metastore titles: ${(items||[]).slice(0,8).map(d=>d.title).join(' | ')}`);
+  const res = await fetch(CATALOG_URL, { headers: { Accept: 'application/json' } });
+  if (!res.ok) throw new Error(`Catalog HTTP ${res.status}`);
+  const catalog = await res.json();
+  const all = catalog.dataset || [];
 
-  const ds = (items || []).find(d => {
+  // Show all nursing-home-related titles for debugging
+  const nursing = all.filter(d => (d.title||'').toLowerCase().includes('nurs'));
+  renderStarsDebug('Nursing datasets in catalog:\n' + nursing.map(d => d.title).join('\n'));
+
+  const ds = nursing.find(d => {
     const t = (d.title || '').toLowerCase();
-    return t.includes('provider information') || t.includes('care compare');
+    return t.includes('provider') || t.includes('care compare') || t.includes('staffing');
   });
-  if (!ds) throw new Error(`Not found. Titles: ${(items||[]).slice(0,8).map(d=>d.title).join(' | ')}`);
+  if (!ds) throw new Error(`None matched. All nursing titles:\n${nursing.map(d=>d.title).join('\n')}`);
 
   const apiDist = (ds.distribution || []).find(d =>
     (d.format || '').toUpperCase() === 'API' || (d.accessURL || '').includes('/datastore/query/')
   );
-  if (!apiDist?.accessURL) throw new Error(`No API dist in: ${JSON.stringify(ds.distribution).slice(0,200)}`);
+  if (!apiDist?.accessURL) throw new Error(`No API dist. Distributions: ${JSON.stringify(ds.distribution).slice(0,300)}`);
 
   const url = apiDist.accessURL;
   try { localStorage.setItem(PROVIDER_INFO_URL_KEY, JSON.stringify({ ts: Date.now(), url })); } catch (_) {}
