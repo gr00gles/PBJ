@@ -566,7 +566,9 @@ async function fetchStarRatings(provnum) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Stars API ${res.status}`);
   const json = await res.json();
+  console.log('[stars] raw API response:', json);
   const row = (json.results || json.data || [])[0] || null;
+  console.log('[stars] first row:', row);
   if (row) {
     try { localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data: row })); } catch (_) {}
   }
