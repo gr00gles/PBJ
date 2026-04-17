@@ -558,22 +558,27 @@ function starDebug(msg) {
 }
 
 async function findAndShowStars(provnum) {
+  const proxied = `https://corsproxy.io/?${encodeURIComponent(
+    `https://data.cms.gov/provider-data/api/1/datastore/query/4pq5-n9py/0?conditions[0][property]=provnum&conditions[0][value]=${provnum}&conditions[0][operator]=%3D&limit=1`
+  )}`;
   const attempts = [
-    `https://data.cms.gov/resource/4pq5-n9py.json?provnum=${provnum}&$limit=1`,
-    `https://data.cms.gov/quality-of-care/nursing-home-care-compare/api/data?filter[PROVNUM]=${provnum}&size=1`,
+    `https://data.cms.gov/api/1/datastore/query/mj5m-pzi6/0?filter[PROVNUM]=${provnum}&size=1`,
+    `https://data.cms.gov/api/1/datastore/query/ynj2-r877/0?filter[PROVNUM]=${provnum}&size=1`,
+    proxied,
   ];
   for (const url of attempts) {
-    starDebug(`Trying:\n${url}`);
+    starDebug(`Trying:\n${url.slice(0, 100)}…`);
     try {
       const res = await fetch(url, { headers: { Accept: 'application/json' } });
       const text = await res.text();
-      starDebug(`URL: ${url}\nStatus: ${res.status}\nBody: ${text.slice(0, 600)}`);
-      if (res.ok) return;
+      starDebug(`Status: ${res.status}\nBody: ${text.slice(0, 800)}`);
+      if (res.ok && text.includes(provnum)) { starDebug(`✓ FOUND at:\n${url}\n\n${text.slice(0,800)}`); return; }
     } catch (e) {
-      starDebug(`URL: ${url}\nFailed: ${e.message}`);
+      starDebug(`Failed: ${e.message}`);
     }
-    await new Promise(r => setTimeout(r, 500));
+    await new Promise(r => setTimeout(r, 400));
   }
+  starDebug('All endpoints failed. Star ratings not available via static site CORS.');
 }
 
 function renderCareCompareLink(provnum, provname) {
